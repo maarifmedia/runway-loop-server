@@ -1,90 +1,62 @@
 from flask import Flask, request, jsonify
+import threading
 import subprocess
 import os
+import requests
 
 app = Flask(__name__)
 
-@app.route("/loop", methods=["POST"])
-def loop_video():
+@app.route("/", methods=["GET"])
+def health():
+    return "Runway loop server running"
+
+def process_video(input_url, duration):
+    try:
+        input_path = "/tmp/input.mp4"
+        output_path = "/tmp/output.mp4"
+
+        # Videoyu indir
+        r = requests.get(input_url, stream=True)
+        with open(input_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        # FFmpeg loop (arka planda, uzun sürebilir)
+        cmd = [
+            "ffmpeg",
+            "-stream_loop", "-1",
+            "-i", input_path,
+            "-t", str(duration),
+            "-c", "copy",
+            output_path
+        ]
+
+        subprocess.run(cmd, check=True)
+        print("Loop video hazır:", output_path)
+
+        # ŞİMDİLİK BURADA DURUYORUZ
+        # (Bir sonraki adımda Dropbox upload ekleyeceğiz)
+
+    except Exception as e:
+        print("Hata:", e)
+
+@app.route("/start", methods=["POST"])
+def start():
     data = request.json
-    input_url = data["input_url"]
-    output_name = "output.mp4"
+    input_url = data.get("input_url")
+    duration = data.get("duration")
 
-    subprocess.run(["wget", input_url, "-O", "input.mp4"])
+    if not input_url or not duration:
+        return jsonify({"error": "input_url and duration required"}), 400
 
-    subprocess.run([
-        "ffmpeg",
-        "-stream_loop", "449",
-        "-i", "input.mp4",
-        "-c", "copy",
-        output_name
-    ])
+    # Make'e HEMEN cevap → timeout olmaz
+    thread = threading.Thread(
+        target=process_video,
+        args=(input_url, duration)
+    )
+    thread.start()
 
-    return jsonify({"status": "done", "file": output_name})
+    return jsonify({"status": "started"}), 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
-import express from "express";
-import fetch from "node-fetch";
-import { exec } from "child_process";
-import fs from "fs";
-import path from "path";
-
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-
-// Basit health check
-app.get("/", (req, res) => {
-  res.send("Runway loop server is running");
-});
-
-// ASENKRON LOOP ENDPOINT
-app.post("/start", async (req, res) => {
-  const { input_url, duration } = req.body;
-
-  if (!input_url || !duration) {
-    return res.status(400).json({ error: "input_url and duration required" });
-  }
-
-  // Make'e HEMEN cevap veriyoruz (timeout olmaz)
-  res.json({ status: "started" });
-
-  const workdir = "/tmp";
-  const inputPath = path.join(workdir, "input.mp4");
-  const outputPath = path.join(workdir, "output.mp4");
-
-  try {
-    // Videoyu indir
-    const response = await fetch(input_url);
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(inputPath, Buffer.from(buffer));
-
-    // FFmpeg loop
-    const cmd = `ffmpeg -stream_loop -1 -i ${inputPath} -t ${duration} -c copy ${outputPath}`;
-
-    exec(cmd, async (error) => {
-      if (error) {
-        console.error("FFmpeg error:", error);
-        return;
-      }
-
-      console.log("Loop video ready:", outputPath);
-      // BURADA ileride Dropbox upload ekleyebiliriz
-    });
-  } catch (err) {
-    console.error("Processing error:", err);
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
-{
-  "type": "module",
-  "dependencies": {
-    "express": "^4.19.2",
-    "node-fetch": "^3.3.2"
-  }
-}
+    app.run(host="0.0.0.0", port=3000)
