@@ -22,14 +22,19 @@ def run_ffmpeg(job_id, input_url, duration):
             check=True
         )
 
-        # Create looped video
+        # Create looped video (re-encode for compatibility)
         subprocess.run(
             [
-                "ffmpeg", "-y",
+                "ffmpeg",
+                "-y",
                 "-stream_loop", "-1",
                 "-i", input_path,
                 "-t", str(duration),
-                "-c", "copy",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "23",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
                 output_path
             ],
             check=True
@@ -37,6 +42,10 @@ def run_ffmpeg(job_id, input_url, duration):
 
         JOBS[job_id]["status"] = "finished"
         JOBS[job_id]["output_path"] = output_path
+
+    except subprocess.CalledProcessError as e:
+        JOBS[job_id]["status"] = "error"
+        JOBS[job_id]["error"] = f"FFmpeg/Wget error: {e}"
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
