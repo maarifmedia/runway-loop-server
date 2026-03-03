@@ -2,6 +2,7 @@ import os
 import uuid
 import threading
 import subprocess
+import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -11,18 +12,28 @@ BASE_DIR = "/tmp/videos"
 os.makedirs(BASE_DIR, exist_ok=True)
 
 
+def download_file(url, path):
+    r = requests.get(url, stream=True)
+    r.raise_for_status()
+    with open(path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+
 def run_ffmpeg(job_id, input_url, duration):
     try:
         input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
         output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
-        # Download video
-        subprocess.run(
-            ["wget", "-O", input_path, input_url],
-            check=True
-        )
+        # Download video using requests (safer than wget)
+        download_file(input_url, input_path)
 
-        # Create looped video (re-encode for compatibility)
+        # Verify file size
+        if os.path.getsize(input_path) < 100000:
+            raise Exception("Downloaded file too small - probably not a real video")
+
+        # Create looped video
         subprocess.run(
             [
                 "ffmpeg",
@@ -42,10 +53,6 @@ def run_ffmpeg(job_id, input_url, duration):
 
         JOBS[job_id]["status"] = "finished"
         JOBS[job_id]["output_path"] = output_path
-
-    except subprocess.CalledProcessError as e:
-        JOBS[job_id]["status"] = "error"
-        JOBS[job_id]["error"] = f"FFmpeg/Wget error: {e}"
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
