@@ -2,7 +2,8 @@ import os
 import uuid
 import threading
 import subprocess
-from flask import Flask, request, jsonify, send_file
+import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
@@ -10,13 +11,36 @@ JOBS = {}
 BASE_DIR = "/tmp/videos"
 os.makedirs(BASE_DIR, exist_ok=True)
 
+DROPBOX_TOKEN = os.environ.get("DROPBOX_TOKEN")
+
+
+def upload_to_dropbox(local_path, dropbox_path):
+    with open(local_path, "rb") as f:
+        headers = {
+            "Authorization": f"Bearer {DROPBOX_TOKEN}",
+            "Dropbox-API-Arg": str({
+                "path": dropbox_path,
+                "mode": "overwrite",
+                "autorename": True,
+                "mute": False
+            }).replace("'", '"'),
+            "Content-Type": "application/octet-stream"
+        }
+
+        response = requests.post(
+            "https://content.dropboxapi.com/2/files/upload",
+            headers=headers,
+            data=f
+        )
+
+        return response.status_code == 200
+
 
 def run_ffmpeg(job_id, duration):
     try:
         input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
         output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
-        # Create looped video (ultrafast preset for Render free CPU)
         subprocess.run(
             [
                 "ffmpeg", "-y",
@@ -32,9 +56,16 @@ def run_ffmpeg(job_id, duration):
             check=True
         )
 
-        JOBS[job_id]["status"] = "finished"
-        JOBS[job_id]["output_path"] = output_path
-        JOBS[job_id]["download_url"] = f"/download/{job_id}"
+        dropbox_path = f"/youtube_outputs/{job_id}.mp4"
+
+        success = upload_to_dropbox(output_path, dropbox_path)
+
+        if success:
+            JOBS[job_id]["status"] = "finished"
+            JOBS[job_id]["dropbox_path"] = dropbox_path
+        else:
+            JOBS[job_id]["status"] = "error"
+            JOBS[job_id]["error"] = "Dropbox upload failed"
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
@@ -47,11 +78,10 @@ def start_loop():
         return jsonify({"error": "file required"}), 400
 
     file = request.files["file"]
-    duration = request.form.get("duration", 10)
+    duration = request.form.get("duration", 3600)
 
     job_id = str(uuid.uuid4())
     input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
-
     file.save(input_path)
 
     JOBS[job_id] = {"status": "started"}
@@ -76,16 +106,6 @@ def check_status(job_id):
         return jsonify({"error": "job not found"}), 404
 
     return jsonify(job)
-
-
-@app.route("/download/<job_id>", methods=["GET"])
-def download_file(job_id):
-    job = JOBS.get(job_id)
-
-    if not job or job.get("status") != "finished":
-        return jsonify({"error": "file not ready"}), 404
-
-    return send_file(job["output_path"], as_attachment=True)
 
 
 if __name__ == "__main__":
