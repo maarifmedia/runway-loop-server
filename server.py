@@ -2,7 +2,7 @@ import os
 import uuid
 import threading
 import subprocess
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 
 app = Flask(__name__)
 
@@ -11,22 +11,22 @@ BASE_DIR = "/tmp/videos"
 os.makedirs(BASE_DIR, exist_ok=True)
 
 
-def run_ffmpeg(job_id, input_path, duration):
+def run_ffmpeg(job_id, duration):
     try:
+        input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
         output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
+        # Create looped video (ultrafast preset for Render free CPU)
         subprocess.run(
             [
-                "ffmpeg",
-                "-y",
+                "ffmpeg", "-y",
                 "-stream_loop", "-1",
                 "-i", input_path,
                 "-t", str(duration),
                 "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "23",
+                "-preset", "ultrafast",
+                "-crf", "28",
                 "-c:a", "aac",
-                "-movflags", "+faststart",
                 output_path
             ],
             check=True
@@ -34,6 +34,7 @@ def run_ffmpeg(job_id, input_path, duration):
 
         JOBS[job_id]["status"] = "finished"
         JOBS[job_id]["output_path"] = output_path
+        JOBS[job_id]["download_url"] = f"/download/{job_id}"
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
@@ -46,20 +47,18 @@ def start_loop():
         return jsonify({"error": "file required"}), 400
 
     file = request.files["file"]
-    duration = request.form.get("duration")
-
-    if not duration:
-        return jsonify({"error": "duration required"}), 400
+    duration = request.form.get("duration", 10)
 
     job_id = str(uuid.uuid4())
     input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
+
     file.save(input_path)
 
     JOBS[job_id] = {"status": "started"}
 
     thread = threading.Thread(
         target=run_ffmpeg,
-        args=(job_id, input_path, duration)
+        args=(job_id, duration)
     )
     thread.start()
 
@@ -77,6 +76,16 @@ def check_status(job_id):
         return jsonify({"error": "job not found"}), 404
 
     return jsonify(job)
+
+
+@app.route("/download/<job_id>", methods=["GET"])
+def download_file(job_id):
+    job = JOBS.get(job_id)
+
+    if not job or job.get("status") != "finished":
+        return jsonify({"error": "file not ready"}), 404
+
+    return send_file(job["output_path"], as_attachment=True)
 
 
 if __name__ == "__main__":
