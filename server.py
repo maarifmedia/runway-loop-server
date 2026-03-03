@@ -2,7 +2,6 @@ import os
 import uuid
 import threading
 import subprocess
-import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -12,35 +11,29 @@ BASE_DIR = "/tmp/videos"
 os.makedirs(BASE_DIR, exist_ok=True)
 
 
-def download_file(url, path):
-    r = requests.get(url, allow_redirects=True)
-    r.raise_for_status()
-
-    with open(path, "wb") as f:
-        f.write(r.content)
-
-
-def run_ffmpeg(job_id, input_url, duration):
+def run_ffmpeg(job_id, input_path, duration):
     try:
-        input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
+        output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
-        download_file(input_url, input_path)
-
-        size = os.path.getsize(input_path)
-
-        # Eğer 500KB'dan küçükse büyük ihtimal HTML
-        if size < 500000:
-            with open(input_path, "rb") as f:
-                preview = f.read(300)
-            raise Exception(f"Downloaded file too small ({size} bytes). First bytes: {preview}")
-
-        # Test decode only (no encode yet)
         subprocess.run(
-            ["ffmpeg", "-y", "-i", input_path],
+            [
+                "ffmpeg",
+                "-y",
+                "-stream_loop", "-1",
+                "-i", input_path,
+                "-t", str(duration),
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "23",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                output_path
+            ],
             check=True
         )
 
         JOBS[job_id]["status"] = "finished"
+        JOBS[job_id]["output_path"] = output_path
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
@@ -49,19 +42,24 @@ def run_ffmpeg(job_id, input_url, duration):
 
 @app.route("/loop", methods=["POST"])
 def start_loop():
-    data = request.json
-    input_url = data.get("input_url")
-    duration = data.get("duration")
+    if "file" not in request.files:
+        return jsonify({"error": "file required"}), 400
 
-    if not input_url or not duration:
-        return jsonify({"error": "input_url and duration required"}), 400
+    file = request.files["file"]
+    duration = request.form.get("duration")
+
+    if not duration:
+        return jsonify({"error": "duration required"}), 400
 
     job_id = str(uuid.uuid4())
+    input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
+    file.save(input_path)
+
     JOBS[job_id] = {"status": "started"}
 
     thread = threading.Thread(
         target=run_ffmpeg,
-        args=(job_id, input_url, duration)
+        args=(job_id, input_path, duration)
     )
     thread.start()
 
