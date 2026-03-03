@@ -24,28 +24,36 @@ def download_file(url, path):
 def run_ffmpeg(job_id, input_url, duration):
     try:
         input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
+        temp_path = os.path.join(BASE_DIR, f"{job_id}_temp.mp4")
         output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
-        # Download video using requests (safer than wget)
+        # Download
         download_file(input_url, input_path)
 
-        # Verify file size
-        if os.path.getsize(input_path) < 100000:
-            raise Exception("Downloaded file too small - probably not a real video")
+        # Önce videoyu standart formata çevir
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", input_path,
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "23",
+                "-c:a", "aac",
+                temp_path
+            ],
+            check=True
+        )
 
-        # Create looped video
+        # Sonra istediğimiz süreye trim et
         subprocess.run(
             [
                 "ffmpeg",
                 "-y",
                 "-stream_loop", "-1",
-                "-i", input_path,
+                "-i", temp_path,
                 "-t", str(duration),
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "23",
-                "-c:a", "aac",
-                "-movflags", "+faststart",
+                "-c", "copy",
                 output_path
             ],
             check=True
