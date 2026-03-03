@@ -18,12 +18,7 @@ def upload_to_dropbox(local_path, dropbox_path):
     with open(local_path, "rb") as f:
         headers = {
             "Authorization": f"Bearer {DROPBOX_TOKEN}",
-            "Dropbox-API-Arg": str({
-                "path": dropbox_path,
-                "mode": "overwrite",
-                "autorename": True,
-                "mute": False
-            }).replace("'", '"'),
+            "Dropbox-API-Arg": '{"path": "' + dropbox_path + '", "mode": "overwrite"}',
             "Content-Type": "application/octet-stream"
         }
 
