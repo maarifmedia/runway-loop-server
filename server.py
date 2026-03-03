@@ -13,54 +13,34 @@ os.makedirs(BASE_DIR, exist_ok=True)
 
 
 def download_file(url, path):
-    r = requests.get(url, stream=True)
+    r = requests.get(url, allow_redirects=True)
     r.raise_for_status()
+
     with open(path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+        f.write(r.content)
 
 
 def run_ffmpeg(job_id, input_url, duration):
     try:
         input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
-        temp_path = os.path.join(BASE_DIR, f"{job_id}_temp.mp4")
-        output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
-        # Download
         download_file(input_url, input_path)
 
-        # Önce videoyu standart formata çevir
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i", input_path,
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-crf", "23",
-                "-c:a", "aac",
-                temp_path
-            ],
-            check=True
-        )
+        size = os.path.getsize(input_path)
 
-        # Sonra istediğimiz süreye trim et
+        # Eğer 500KB'dan küçükse büyük ihtimal HTML
+        if size < 500000:
+            with open(input_path, "rb") as f:
+                preview = f.read(300)
+            raise Exception(f"Downloaded file too small ({size} bytes). First bytes: {preview}")
+
+        # Test decode only (no encode yet)
         subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-stream_loop", "-1",
-                "-i", temp_path,
-                "-t", str(duration),
-                "-c", "copy",
-                output_path
-            ],
+            ["ffmpeg", "-y", "-i", input_path],
             check=True
         )
 
         JOBS[job_id]["status"] = "finished"
-        JOBS[job_id]["output_path"] = output_path
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
