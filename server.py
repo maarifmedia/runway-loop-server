@@ -1,6 +1,3 @@
-@app.route("/", methods=["GET"])
-def index():
-    return "Server is live!", 200
 import os
 import uuid
 import threading
