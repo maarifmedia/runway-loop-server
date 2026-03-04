@@ -36,23 +36,45 @@ def run_ffmpeg(job_id, duration):
         input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
         output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
 
+        # Input video süresini öğren
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                input_path
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        input_duration = float(probe.stdout.strip())
+        repeat_count = int(float(duration) / input_duration) + 1
+
+        # concat listesi oluştur
+        concat_file = os.path.join(BASE_DIR, f"{job_id}_list.txt")
+
+        with open(concat_file, "w") as f:
+            for _ in range(repeat_count):
+                f.write(f"file '{input_path}'\n")
+
+        # RE-ENCODE YOK (ultra hızlı)
         subprocess.run(
             [
-                "ffmpeg", "-y",
-                "-stream_loop", "-1",
-                "-i", input_path,
+                "ffmpeg",
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_file,
                 "-t", str(duration),
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-crf", "28",
-                "-c:a", "aac",
+                "-c", "copy",
                 output_path
             ],
             check=True
         )
 
         dropbox_path = f"/youtube_outputs/{job_id}.mp4"
-
         success = upload_to_dropbox(output_path, dropbox_path)
 
         if success:
