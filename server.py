@@ -1,130 +1,106 @@
 import os
 import uuid
-import threading
 import subprocess
 import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-JOBS = {}
-BASE_DIR = "/tmp/videos"
-os.makedirs(BASE_DIR, exist_ok=True)
+jobs = {}
 
 DROPBOX_TOKEN = os.environ.get("DROPBOX_TOKEN")
 
+CHUNK_SIZE = 8 * 1024 * 1024  # 8MB
 
-def upload_to_dropbox(local_path, dropbox_path):
-    with open(local_path, "rb") as f:
-        headers = {
-            "Authorization": f"Bearer {DROPBOX_TOKEN}",
-            "Dropbox-API-Arg": '{"path": "' + dropbox_path + '", "mode": "overwrite"}',
-            "Content-Type": "application/octet-stream"
+def upload_large_file(file_path, dropbox_path):
+    headers = {
+        "Authorization": f"Bearer {DROPBOX_TOKEN}",
+        "Content-Type": "application/octet-stream"
+    }
+
+    file_size = os.path.getsize(file_path)
+
+    with open(file_path, "rb") as f:
+        # START SESSION
+        start_url = "https://content.dropboxapi.com/2/files/upload_session/start"
+        start_headers = headers.copy()
+        start_headers["Dropbox-API-Arg"] = '{"close": false}'
+        start_res = requests.post(start_url, headers=start_headers, data=f.read(CHUNK_SIZE))
+        session_id = start_res.json()["session_id"]
+
+        cursor = {
+            "session_id": session_id,
+            "offset": f.tell()
         }
 
-        response = requests.post(
-            "https://content.dropboxapi.com/2/files/upload",
-            headers=headers,
-            data=f
-        )
+        # APPEND CHUNKS
+        while f.tell() < file_size:
+            append_url = "https://content.dropboxapi.com/2/files/upload_session/append_v2"
+            append_headers = headers.copy()
+            append_headers["Dropbox-API-Arg"] = str({
+                "cursor": cursor,
+                "close": False
+            }).replace("'", '"')
 
-        return response.status_code == 200
+            chunk = f.read(CHUNK_SIZE)
+            requests.post(append_url, headers=append_headers, data=chunk)
 
+            cursor["offset"] = f.tell()
 
-def run_ffmpeg(job_id, duration):
-    try:
-        input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
-        output_path = os.path.join(BASE_DIR, f"{job_id}_loop.mp4")
+        # FINISH SESSION
+        finish_url = "https://content.dropboxapi.com/2/files/upload_session/finish"
+        finish_headers = headers.copy()
+        finish_headers["Dropbox-API-Arg"] = str({
+            "cursor": cursor,
+            "commit": {
+                "path": dropbox_path,
+                "mode": "add",
+                "autorename": True,
+                "mute": False
+            }
+        }).replace("'", '"')
 
-        # Input video süresini öğren
-        probe = subprocess.run(
-            [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                input_path
-            ],
-            capture_output=True,
-            text=True
-        )
-
-        input_duration = float(probe.stdout.strip())
-        repeat_count = int(float(duration) / input_duration) + 1
-
-        # concat listesi oluştur
-        concat_file = os.path.join(BASE_DIR, f"{job_id}_list.txt")
-
-        with open(concat_file, "w") as f:
-            for _ in range(repeat_count):
-                f.write(f"file '{input_path}'\n")
-
-        # RE-ENCODE YOK (ultra hızlı)
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", concat_file,
-                "-t", str(duration),
-                "-c", "copy",
-                output_path
-            ],
-            check=True
-        )
-
-        dropbox_path = f"/youtube_outputs/{job_id}.mp4"
-        success = upload_to_dropbox(output_path, dropbox_path)
-
-        if success:
-            JOBS[job_id]["status"] = "finished"
-            JOBS[job_id]["dropbox_path"] = dropbox_path
-        else:
-            JOBS[job_id]["status"] = "error"
-            JOBS[job_id]["error"] = "Dropbox upload failed"
-
-    except Exception as e:
-        JOBS[job_id]["status"] = "error"
-        JOBS[job_id]["error"] = str(e)
-
+        requests.post(finish_url, headers=finish_headers)
 
 @app.route("/loop", methods=["POST"])
-def start_loop():
-    if "file" not in request.files:
-        return jsonify({"error": "file required"}), 400
-
-    file = request.files["file"]
-    duration = request.form.get("duration", 3600)
+def loop_video():
+    data = request.json
+    video_url = data.get("video_url")
+    duration = int(data.get("duration"))
 
     job_id = str(uuid.uuid4())
-    input_path = os.path.join(BASE_DIR, f"{job_id}_input.mp4")
-    file.save(input_path)
+    jobs[job_id] = {"status": "started"}
 
-    JOBS[job_id] = {"status": "started"}
+    input_path = f"/tmp/{job_id}_input.mp4"
+    output_path = f"/tmp/{job_id}_output.mp4"
 
-    thread = threading.Thread(
-        target=run_ffmpeg,
-        args=(job_id, duration)
-    )
-    thread.start()
+    subprocess.run(["wget", "-O", input_path, video_url])
 
-    return jsonify({
-        "status": "started",
-        "job_id": job_id
-    })
+    ffmpeg_command = [
+        "ffmpeg",
+        "-stream_loop", "-1",
+        "-i", input_path,
+        "-t", str(duration),
+        "-c", "copy",
+        output_path
+    ]
 
+    subprocess.run(ffmpeg_command)
+
+    dropbox_path = f"/youtube_outputs/{job_id}.mp4"
+
+    upload_large_file(output_path, dropbox_path)
+
+    jobs[job_id] = {
+        "status": "finished",
+        "dropbox_path": dropbox_path
+    }
+
+    return jsonify({"job_id": job_id})
 
 @app.route("/status/<job_id>", methods=["GET"])
-def check_status(job_id):
-    job = JOBS.get(job_id)
-
-    if not job:
-        return jsonify({"error": "job not found"}), 404
-
-    return jsonify(job)
-
+def status(job_id):
+    return jsonify(jobs.get(job_id, {"status": "not_found"}))
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
