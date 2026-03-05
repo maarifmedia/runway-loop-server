@@ -56,7 +56,7 @@ def upload_youtube(video_path, title):
     with open(video_path, "rb") as f:
 
         headers = {
-            "Authorization": f"Bearer {access_token},
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "video/mp4"
         }
 
