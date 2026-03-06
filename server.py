@@ -1,53 +1,74 @@
-from flask import Flask, request, jsonify
-import subprocess
-import os
-import datetime
+import subprocess, os, datetime, requests
 
-app = Flask(__name__)
+# -----------------------
+# 1️⃣ Dosya URL'leri
+# -----------------------
+files = {
+    "rain.jpg": "https://raw.githubusercontent.com/username/repo/branch/rain.jpg",
+    "rain.mp3": "https://raw.githubusercontent.com/username/repo/branch/rain.mp3"
+}
 
-# Video ve ses dosyalarının bulunduğu klasör
-VIDEO_FOLDER = "videos"
-os.makedirs(VIDEO_FOLDER, exist_ok=True)
+# -----------------------
+# 2️⃣ Dosyaları indir
+# -----------------------
+for filename, url in files.items():
+    if not os.path.exists(filename):
+        r = requests.get(url)
+        if r.status_code == 200:
+            with open(filename, "wb") as f:
+                f.write(r.content)
+            print(f"{filename} indirildi")
+        else:
+            raise Exception(f"{filename} indirilemedi, status: {r.status_code}")
+    else:
+        print(f"{filename} zaten mevcut")
 
-@app.route("/create-video", methods=["POST"])
-def create_video():
+# -----------------------
+# 3️⃣ videos klasörü
+# -----------------------
+if not os.path.exists("videos"):
+    os.makedirs("videos")
+elif not os.path.isdir("videos"):
+    os.remove("videos")
+    os.makedirs("videos")
+
+# -----------------------
+# 4️⃣ ffmpeg komutu
+# -----------------------
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+test_output = f"videos/test_video_{timestamp}.mp4"
+full_output = f"videos/sleep_video_rain_{timestamp}.mp4"
+
+def create_video(duration, output_file):
+    cmd = [
+        "ffmpeg",
+        "-loop", "1",
+        "-i", "rain.jpg",
+        "-i", "rain.mp3",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-t", duration,
+        "-pix_fmt", "yuv420p",
+        output_file
+    ]
     try:
-        data = request.json
+        subprocess.run(cmd, check=True)
+        print(f"✅ Video oluşturuldu: {output_file}")
+    except subprocess.CalledProcessError as e:
+        print("❌ ffmpeg çalıştırılamadı!")
+        print(e)
+        exit(1)
 
-        # Scene ve duration parametresi alıyoruz
-        scene = data.get("scene", "rain")  # rain / fireplace / forest
-        duration = data.get("duration", "3600")  # saniye cinsinden, default 1 saat
+# -----------------------
+# 5️⃣ Önce test video
+# -----------------------
+print("▶️ 10 saniyelik test video oluşturuluyor...")
+create_video("10", test_output)
 
-        # Dosya isimleri
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"{VIDEO_FOLDER}/sleep_video_{scene}_{timestamp}.mp4"
-
-        # Görsel ve ses dosyaları
-        image_file = f"{scene}.jpg"
-        audio_file = f"{scene}.mp3"
-
-        # FFmpeg komutu
-        command = [
-            "ffmpeg",
-            "-loop", "1",
-            "-i", image_file,
-            "-i", audio_file,
-            "-c:v", "libx264",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-shortest",
-            "-t", str(duration),
-            "-pix_fmt", "yuv420p",
-            output_file
-        ]
-
-        subprocess.run(command, check=True)
-
-        # Başarılı yanıt
-        return jsonify({"status": "success", "video_file": output_file})
-
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+# -----------------------
+# 6️⃣ 1 saatlik video
+# -----------------------
+print("▶️ 1 saatlik video oluşturuluyor...")
+create_video("3600", full_output)
