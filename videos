@@ -1,1 +1,1 @@
-mkdir videos
+mkdir -p videos
