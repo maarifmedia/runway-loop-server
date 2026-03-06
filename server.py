@@ -79,16 +79,22 @@ def loop_video():
 
     loop_count = int(duration / 8)
 
+import subprocess
+
 ffmpeg_command = [
     "ffmpeg",
-    "-stream_loop", str(loop_count),
-    "-i", input_path,
-    "-c", "copy",
-    "-movflags", "+faststart",
-    output_path
+    "-loop", "1",
+    "-i", "image.jpg",
+    "-i", "audio.mp3",
+    "-c:v", "libx264",
+    "-t", "3600",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-shortest",
+    "output.mp4"
 ]
 
-    subprocess.run(ffmpeg_command)
+subprocess.run(ffmpeg_command)
 
     upload_youtube(output_path, f"Loop Video {job_id}")
 
