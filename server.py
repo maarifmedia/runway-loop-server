@@ -77,14 +77,16 @@ def loop_video():
 
     subprocess.run(["wget", "-O", input_path, video_url])
 
-    ffmpeg_command = [
-        "ffmpeg",
-        "-stream_loop", "-1",
-        "-i", input_path,
-        "-t", str(duration),
-        "-c", "copy",
-        output_path
-    ]
+    loop_count = int(duration / 8)
+
+ffmpeg_command = [
+    "ffmpeg",
+    "-stream_loop", str(loop_count),
+    "-i", input_path,
+    "-c", "copy",
+    "-movflags", "+faststart",
+    output_path
+]
 
     subprocess.run(ffmpeg_command)
 
