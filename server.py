@@ -1,39 +1,53 @@
-from flask import Flask, send_file
+from flask import Flask, request, jsonify
 import subprocess
 import os
+import datetime
 
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "Server is running"
+# Video ve ses dosyalarının bulunduğu klasör
+VIDEO_FOLDER = "videos"
+os.makedirs(VIDEO_FOLDER, exist_ok=True)
 
-@app.route("/generate")
-def generate():
+@app.route("/create-video", methods=["POST"])
+def create_video():
+    try:
+        data = request.json
 
-    image_url = "https://images.unsplash.com/photo-1506744038136-46273834b3fb"
-    audio_url = "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3"
+        # Scene ve duration parametresi alıyoruz
+        scene = data.get("scene", "rain")  # rain / fireplace / forest
+        duration = data.get("duration", "3600")  # saniye cinsinden, default 1 saat
 
-    os.system(f"wget -O image.jpg {image_url}")
-    os.system(f"wget -O audio.mp3 {audio_url}")
+        # Dosya isimleri
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"{VIDEO_FOLDER}/sleep_video_{scene}_{timestamp}.mp4"
 
-    ffmpeg_command = [
-        "ffmpeg",
-        "-y",
-        "-loop", "1",
-        "-i", "image.jpg",
-        "-i", "audio.mp3",
-        "-c:v", "libx264",
-        "-t", "3600",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-shortest",
-        "output.mp4"
-    ]
+        # Görsel ve ses dosyaları
+        image_file = f"{scene}.jpg"
+        audio_file = f"{scene}.mp3"
 
-    subprocess.run(ffmpeg_command)
+        # FFmpeg komutu
+        command = [
+            "ffmpeg",
+            "-loop", "1",
+            "-i", image_file,
+            "-i", audio_file,
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            "-t", str(duration),
+            "-pix_fmt", "yuv420p",
+            output_file
+        ]
 
-    return send_file("output.mp4", as_attachment=True)
+        subprocess.run(command, check=True)
+
+        # Başarılı yanıt
+        return jsonify({"status": "success", "video_file": output_file})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
