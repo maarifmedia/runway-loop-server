@@ -79,7 +79,6 @@ def loop_video():
 
     loop_count = int(duration / 8)
 
-import subprocess
 
 ffmpeg_command = [
     "ffmpeg",
