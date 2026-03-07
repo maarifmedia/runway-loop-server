@@ -8,12 +8,11 @@ import pickle
 # --- 1. AYARLAR VE DEĞİŞKENLER (Make.com'dan Gelen Veriler) ---
 IMAGE_URL = os.environ.get("IMAGE_URL", "https://varsayilan-link.com/resim.jpg")
 VIDEO_TITLE = os.environ.get("VIDEO_TITLE", "Otomatik Uyku Videosu")
-# Açıklamaya varsayılan olarak kanalının etiketini de ekledik
 VIDEO_DESC = os.environ.get("VIDEO_DESC", "Rahatlatıcı uyku sesleri. Abone olmayı unutmayın: @TheQuietCorner-yt")
 VIDEO_TAGS = os.environ.get("VIDEO_TAGS", "uyku,rahatlama,asmr").split(",")
 
-# İŞTE SEÇENEK B'NİN FARKI: Make.com'dan gelen ses dosyasının adı
-AUDIO_FILE = os.environ.get("AUDIO_FILENAME", "yagmur.mp3") 
+# Make.com'dan gelen ses dosyasının tam adı (Örn: soundreality-campfire-crackling.mp3.mp3)
+AUDIO_FILE = os.environ.get("AUDIO_FILENAME", "somine_yagmur.mp3.mp3") 
 
 # Sabit dosyalarımız
 IMAGE_FILE = "arkaplan.jpg"
@@ -30,28 +29,32 @@ def download_image(url, filename):
     else:
         raise Exception("Görsel indirilemedi! Lütfen URL'yi kontrol edin.")
 
-# --- 3. SIFIR YÜK FFMPEG RENDER İŞLEMİ (DİNAMİK SES İLE) ---
+# --- 3. AKILLI DÖNGÜ (LOOP) VE 1 SAATLİK RENDER İŞLEMİ ---
 def render_video():
     print(f"Video render işlemi {AUDIO_FILE} sesi ile başlıyor...")
     
-    # Repoda o isimde bir ses dosyası var mı diye kontrol edelim, yoksa hata vermesin diye varsayılan bir ses kullansın
+    # Gelen sesin repoda olup olmadığını kontrol ediyoruz
     aktif_ses = AUDIO_FILE
     if not os.path.exists(aktif_ses):
-        print(f"UYARI: {aktif_ses} bulunamadı! Lütfen GitHub reponuza bu dosyayı yüklediğinizden emin olun.")
-        # İstersen buraya bir varsayılan ses (fallback) atayabilirsin
+        print(f"UYARI: {aktif_ses} bulunamadı! Güvenlik için varsayılan sese geçiliyor.")
+        # Senin belirlediğin en iyi kurtarıcı sese geçiş yapıyor
+        aktif_ses = "somine_yagmur.mp3.mp3" 
     
+    # İşin Büyüsü Burada:
+    # -stream_loop -1 : Sesi sonsuza kadar başa sarıp tekrar çalar
+    # -t 3600 : Videoyu tam 1 saat (3600 saniye) olduğunda keser
     command = [
         "ffmpeg", "-y",
-        "-loop", "1", "-framerate", "0.1", 
-        "-i", IMAGE_FILE,
-        "-i", aktif_ses,
+        "-loop", "1", "-framerate", "0.1", "-i", IMAGE_FILE,
+        "-stream_loop", "-1", "-i", aktif_ses,
+        "-t", "3600",
         "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-        "-c:a", "copy", "-shortest",
+        "-c:a", "copy",
         OUTPUT_VIDEO
     ]
     
     subprocess.run(command, check=True)
-    print("Harika! 1 saatlik video saniyeler içinde oluşturuldu.")
+    print("Harika! Tam 1 saatlik (3600 saniye) video saniyeler içinde oluşturuldu.")
 
 # --- 4. YOUTUBE'A YÜKLEME (CHUNKED UPLOAD) ---
 def upload_to_youtube():
