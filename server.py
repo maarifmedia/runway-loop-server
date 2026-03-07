@@ -3,19 +3,19 @@ import subprocess
 import requests
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 import pickle
 
-# --- 1. AYARLAR VE DEĞİŞKENLER ---
-# Make.com'dan GitHub Actions'a environment variable (ortam değişkeni) olarak gelecek veriler
-IMAGE_URL = os.environ.get("IMAGE_URL", "https://varsayilan-gorsel-linki.com/resim.jpg")
+# --- 1. AYARLAR VE DEĞİŞKENLER (Make.com'dan Gelen Veriler) ---
+IMAGE_URL = os.environ.get("IMAGE_URL", "https://varsayilan-link.com/resim.jpg")
 VIDEO_TITLE = os.environ.get("VIDEO_TITLE", "Otomatik Uyku Videosu")
-VIDEO_DESC = os.environ.get("VIDEO_DESC", "Rahatlatıcı uyku sesleri.")
+# Açıklamaya varsayılan olarak kanalının etiketini de ekledik
+VIDEO_DESC = os.environ.get("VIDEO_DESC", "Rahatlatıcı uyku sesleri. Abone olmayı unutmayın: @TheQuietCorner-yt")
 VIDEO_TAGS = os.environ.get("VIDEO_TAGS", "uyku,rahatlama,asmr").split(",")
 
+# İŞTE SEÇENEK B'NİN FARKI: Make.com'dan gelen ses dosyasının adı
+AUDIO_FILE = os.environ.get("AUDIO_FILENAME", "yagmur.mp3") 
+
 # Sabit dosyalarımız
-AUDIO_FILE = "uyku_sesi.mp3" # GitHub reponda duracak 1 saatlik standart ses dosyan
 IMAGE_FILE = "arkaplan.jpg"
 OUTPUT_VIDEO = "hazir_video.mp4"
 
@@ -28,17 +28,23 @@ def download_image(url, filename):
             f.write(response.content)
         print("Görsel başarıyla indirildi.")
     else:
-        raise Exception("Görsel indirilemedi!")
+        raise Exception("Görsel indirilemedi! Lütfen URL'yi kontrol edin.")
 
-# --- 3. SIFIR YÜK FFMPEG RENDER İŞLEMİ ---
+# --- 3. SIFIR YÜK FFMPEG RENDER İŞLEMİ (DİNAMİK SES İLE) ---
 def render_video():
-    print("Video render işlemi başlıyor (Sıfır Yük Optimizasyonu ile)...")
-    # İşin sırrı bu komutta: framerate 0.1 (saniyede 0.1 kare) ve -c:a copy (sesi kopyala, işleme)
+    print(f"Video render işlemi {AUDIO_FILE} sesi ile başlıyor...")
+    
+    # Repoda o isimde bir ses dosyası var mı diye kontrol edelim, yoksa hata vermesin diye varsayılan bir ses kullansın
+    aktif_ses = AUDIO_FILE
+    if not os.path.exists(aktif_ses):
+        print(f"UYARI: {aktif_ses} bulunamadı! Lütfen GitHub reponuza bu dosyayı yüklediğinizden emin olun.")
+        # İstersen buraya bir varsayılan ses (fallback) atayabilirsin
+    
     command = [
         "ffmpeg", "-y",
         "-loop", "1", "-framerate", "0.1", 
         "-i", IMAGE_FILE,
-        "-i", AUDIO_FILE,
+        "-i", aktif_ses,
         "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
         "-c:a", "copy", "-shortest",
         OUTPUT_VIDEO
@@ -52,10 +58,11 @@ def upload_to_youtube():
     print("YouTube'a yükleme başlıyor...")
     credentials = None
     
-    # Önceden alınmış bir token varsa onu kullanırız (GitHub Secrets içine koyacağız bunu)
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             credentials = pickle.load(token)
+    else:
+        raise Exception("Yetkilendirme dosyası (token.pickle) bulunamadı!")
             
     youtube = build('youtube', 'v3', credentials=credentials)
     
@@ -64,14 +71,13 @@ def upload_to_youtube():
             'title': VIDEO_TITLE,
             'description': VIDEO_DESC,
             'tags': VIDEO_TAGS,
-            'categoryId': '22' # 22 = People & Blogs, 10 = Music gibi değiştirebilirsin
+            'categoryId': '22' # 22 = People & Blogs
         },
         'status': {
-            'privacyStatus': 'public' # Yüklenir yüklenmez herkese açık olur (veya 'private' yapabilirsin)
+            'privacyStatus': 'public' # Yüklendiği an herkese açık olur
         }
     }
     
-    # Videoyu 5MB'lık parçalar halinde yükleyerek belleği şişirmesini engelliyoruz
     media = MediaFileUpload(OUTPUT_VIDEO, chunksize=1024*1024*5, resumable=True)
     
     request = youtube.videos().insert(
