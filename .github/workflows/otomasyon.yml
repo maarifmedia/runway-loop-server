@@ -1,0 +1,35 @@
+name: Uyku Kanali Otomasyonu
+
+# Make.com'dan "video_uret" şifresiyle gelecek webhook sinyalini dinler
+on:
+  repository_dispatch:
+    types: [video_uret] 
+
+jobs:
+  build_and_upload:
+    runs-on: ubuntu-latest # Bize ücretsiz verilen 7GB RAM'li Linux sunucusu
+
+    steps:
+    - name: Repoyu Klonla (Dosyaları Al)
+      uses: actions/checkout@v3
+
+    - name: Python Kurulumu
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: FFmpeg Kurulumu (Video motoru)
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    - name: Kütüphaneleri Yükle
+      run: pip install -r requirements.txt
+
+    - name: Python Kodunu Çalıştır (Video Üret ve Yükle)
+      # Make.com'dan gelen paketleri (payload) Python dosyamıza aktarıyoruz
+      env:
+        IMAGE_URL: ${{ github.event.client_payload.IMAGE_URL }}
+        VIDEO_TITLE: ${{ github.event.client_payload.VIDEO_TITLE }}
+        VIDEO_DESC: ${{ github.event.client_payload.VIDEO_DESC }}
+        VIDEO_TAGS: ${{ github.event.client_payload.VIDEO_TAGS }}
+        AUDIO_FILENAME: ${{ github.event.client_payload.AUDIO_FILENAME }}
+      run: python server.py
