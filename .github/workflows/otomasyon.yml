@@ -32,4 +32,8 @@ jobs:
         VIDEO_DESC: ${{ github.event.client_payload.VIDEO_DESC }}
         VIDEO_TAGS: ${{ github.event.client_payload.VIDEO_TAGS }}
         AUDIO_FILENAME: ${{ github.event.client_payload.AUDIO_FILENAME }}
+        # BU SATIRLARI MUTLAKA EKLE:
+        YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+        YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+        YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
       run: python server.py
