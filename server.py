@@ -5,6 +5,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import pickle
 import time
+import random
 
 # --- 1. AYARLAR ---
 VIDEO_TITLE = os.environ.get("VIDEO_TITLE", "Cozy Ambience - The Quiet Corner")
@@ -16,52 +17,53 @@ SHORTS_DATA = os.environ.get("SHORTS_PLAN", "")
 IMAGE_FILE = "arkaplan.jpg"
 OUTPUT_VIDEO = "hazir_video.mp4"
 
-# --- 2. GÖRSELİ ATEŞ TEMASINA ZORLAMA ---
+# --- 2. ASLA DAĞ GETİRMEYEN GÖRSEL İNDİRİCİ ---
 def download_image():
     if os.path.exists(IMAGE_FILE):
         os.remove(IMAGE_FILE)
 
     title_lower = VIDEO_TITLE.lower()
     
-    # Görseli mutlaka sesle uyumlu hale getirmek için anahtar kelimeleri güncelledik
+    # Kategori Belirleme
     if any(x in title_lower for x in ["cabin", "house", "room", "indoor"]):
-        # İç mekan ateş teması
-        terms = "fireplace,cozy-cabin-interior,burning-fire,dark-room"
+        terms = "fireplace,cozy-interior,burning-fire"
     elif any(x in title_lower for x in ["lake", "water", "lakeside"]):
-        # Göl kenarı kamp ateşi teması (Ateşi zorunlu kılıyoruz)
-        terms = "campfire-by-lake,night-lake-fire,bonfire-shore"
+        terms = "campfire-lake,bonfire-night,fire-on-beach"
     else:
-        # Genel ateş teması
-        terms = "burning-logs,fireplace-close-up,cozy-fire"
+        terms = "burning-logs,fireplace-close-up"
 
-    # ÖNEMLİ: Linke 'fire' ve 'night' kelimelerini sabitledik ki tekneli göl manzarası gelmesin
-    url = f"https://source.unsplash.com/featured/1920x1080/?{terms},night,fire&sig={int(time.time())}"
+    # DAĞLARI SİLİYORUZ: Sorguya '-mountain,-peak,-hills' ekleyerek Unsplash'i zorluyoruz
+    # sig=random ile her seferinde farklı resim gelmesini garanti ediyoruz
+    final_url = f"https://source.unsplash.com/featured/1920x1080/?{terms},-mountain,-peak,-hills&sig={random.randint(1, 99999)}"
     
-    print(f"Sesle uyumlu görsel aranıyor: {url}")
+    print(f"Görsel Aranıyor: {final_url}")
     
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=25)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(final_url, headers=headers, timeout=25)
         response.raise_for_status()
         with open(IMAGE_FILE, 'wb') as f:
             f.write(response.content)
         print("Görsel başarıyla indirildi.")
     except Exception as e:
-        print(f"Hata: {e}. Yedek şömine görseline geçiliyor...")
-        # Unsplash hata verirse doğrudan bir şömine resmi indirir
-        yedek = "https://images.unsplash.com/photo-1542332213-31f87348057f?w=1920"
-        res = requests.get(yedek)
+        print(f"Hata: {e}. Garanti görsel listesinden biri seçiliyor...")
+        # Unsplash saçmalarsa kullanılacak 'ateş/huzur' odaklı kesin linkler
+        safe_links = [
+            "https://images.unsplash.com/photo-1542332213-31f87348057f", # Şömine
+            "https://images.unsplash.com/photo-1473286835901-04adb1afab03", # Kamp ateşi
+            "https://images.unsplash.com/photo-1518005020251-0ea5c182dca3"  # Gece ateşi
+        ]
+        res = requests.get(random.choice(safe_links))
         with open(IMAGE_FILE, 'wb') as f:
             f.write(res.content)
 
-# --- 3. GÜVENLİ RENDER (BOYUT HATALARINI ÖNLER) ---
+# --- 3. 1 SAATLİK GÜVENLİ RENDER ---
 def render_video():
     if not os.path.exists(IMAGE_FILE): return
-
-    print("1 Saatlik render işlemi başlatıldı...")
+    print("Render başladı (1 Saat)...")
     ses = AUDIO_FILE if os.path.exists(AUDIO_FILE) else "somine_yagmur.mp3.mp3"
 
-    # FFmpeg filtresi: Gelen resim ne boyutta olursa olsun 1920x1080 yap ve videoyu bozma
+    # Gelen resim ne olursa olsun 1080p'ye zorlayan filtre
     command = [
         "ffmpeg", "-y",
         "-loop", "1", "-framerate", "1", "-i", IMAGE_FILE,
@@ -73,11 +75,9 @@ def render_video():
         "-shortest",
         OUTPUT_VIDEO
     ]
-    
     subprocess.run(command, check=True)
-    print("Render tamamlandı.")
 
-# --- 4. YOUTUBE YÜKLEME ---
+# --- 4. YÜKLEME ---
 def upload():
     if not os.path.exists('token.pickle'): return
     with open('token.pickle', 'rb') as t:
@@ -92,8 +92,8 @@ def upload():
     response = None
     while response is None:
         status, response = request.next_chunk()
-        if status: print(f"Yükleniyor: %{int(status.progress() * 100)}")
-    print(f"Yüklendi! ID: {response['id']}")
+        if status: print(f"Yükleme: %{int(status.progress() * 100)}")
+    print(f"Başarılı! ID: {response['id']}")
 
 if __name__ == "__main__":
     download_image()
