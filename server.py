@@ -4,6 +4,7 @@ import requests
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import pickle
+import time
 
 # --- 1. AYARLAR VE DEĞİŞKENLER ---
 VIDEO_TITLE = os.environ.get("VIDEO_TITLE", "Peaceful Relaxation - The Quiet Corner")
@@ -15,55 +16,49 @@ SHORTS_DATA = os.environ.get("SHORTS_PLAN", "")
 IMAGE_FILE = "arkaplan.jpg"
 OUTPUT_VIDEO = "hazir_video.mp4"
 
-# --- 2. AKILLI GÖRSEL SEÇİCİ VE İNDİRME ---
+# --- 2. GELİŞMİŞ GÖRSEL SEÇİCİ VE İNDİRME ---
 def download_image(filename):
-    # Eski dosyayı sil (Önbellek temizliği)
     if os.path.exists(filename):
         os.remove(filename)
 
     title_lower = VIDEO_TITLE.lower()
     
-    # Başlığa göre atmosfer seçimi (Dağ görselinden kaçınmak için spesifik kelimeler)
-    if "cabin" in title_lower or "house" in title_lower or "indoor" in title_lower:
-        search_terms = "cozy,fireplace,indoor,cabin-interior"
-    elif "lake" in title_lower or "water" in title_lower:
-        search_terms = "lakeside,lake-night,campfire-lake"
-    elif "rain" in title_lower or "storm" in title_lower:
-        search_terms = "rainy-window,dark-room,ambient-rain"
-    elif "forest" in title_lower:
-        search_terms = "misty-forest,dark-woods,night-forest"
+    # Dağ (Mountain) kelimesini yasaklıyoruz ve iç mekan/göl odaklı kelimeleri güçlendiriyoruz
+    if any(x in title_lower for x in ["cabin", "house", "indoor", "room"]):
+        # İç mekan garantisi için 'room' ve 'interior' anahtar kelimelerini zorunlu kılıyoruz
+        search_terms = "cozy-room-interior,fireplace-living-room,dark-aesthetic-room"
+    elif any(x in title_lower for x in ["lake", "water", "river"]):
+        search_terms = "lakeside-night,dark-lake-water,campfire-by-lake"
+    elif "rain" in title_lower:
+        search_terms = "rainy-window-view,street-rain-night,dark-rainy-ambient"
     else:
-        # Hiçbiri tutmazsa genel huzurlu gece manzarası
-        search_terms = "night-sky,starry-night,calm-nature"
+        search_terms = "dark-forest-night,misty-night-ambient"
 
-    # Unsplash'ten her seferinde benzersiz görsel çekmek için sig (rastgele sayı) ekliyoruz
-    # Make'den gelen linki artık hiç kullanmıyoruz, Python kendisi karar veriyor.
-    final_url = f"https://source.unsplash.com/featured/1920x1080/?{search_terms}&sig={os.urandom(4).hex()}"
+    # Unsplash'e 'mountain' kelimesini eksi (-) operatörüyle göndererek dağ resimlerini filtrelemeye çalışıyoruz
+    # Ayrıca sig parametresine zaman damgası ekleyerek her saniye farklı resim gelmesini sağlıyoruz
+    final_url = f"https://source.unsplash.com/featured/1920x1080/?{search_terms},-mountain,-peak&sig={int(time.time())}"
     
-    print(f"Görsel indiriliyor (Seçilen Atmosfer: {search_terms}): {final_url}")
+    print(f"Görsel indiriliyor (Filtreli Tema: {search_terms}): {final_url}")
     
     try:
-        response = requests.get(final_url, timeout=30, allow_redirects=True)
+        # User-Agent ekleyerek gerçek bir tarayıcı gibi davranıyoruz (Unsplash bot koruması için)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(final_url, headers=headers, timeout=30, allow_redirects=True)
         response.raise_for_status()
         with open(filename, 'wb') as f:
             f.write(response.content)
-        print("Görsel başarıyla indirildi ve sisteme kaydedildi.")
+        print("Yeni görsel başarıyla indirildi.")
     except Exception as e:
-        print(f"Görsel indirme hatası: {e}. Standart manzara indiriliyor...")
-        fallback = requests.get("https://images.unsplash.com/photo-1542332213-31f87348057f")
+        print(f"Hata: {e}. Yedek göl görseli indiriliyor...")
+        fallback = requests.get("https://images.unsplash.com/photo-1501785888041-af3ef285b470")
         with open(filename, 'wb') as f:
             f.write(fallback.content)
 
-# --- 3. 1 SAATLİK RENDER İŞLEMİ (3600 SANİYE) ---
+# --- 3. 1 SAATLİK RENDER ---
 def render_video():
-    print(f"Render işlemi {AUDIO_FILE} sesi ile başlatılıyor (Hedef: 1 Saat)...")
+    print(f"1 Saatlik render başlıyor: {AUDIO_FILE}")
+    aktif_ses = AUDIO_FILE if os.path.exists(AUDIO_FILE) else "somine_yagmur.mp3.mp3" 
     
-    aktif_ses = AUDIO_FILE
-    if not os.path.exists(aktif_ses):
-        print(f"UYARI: {aktif_ses} bulunamadı! Varsayılan sese dönülüyor.")
-        aktif_ses = "somine_yagmur.mp3.mp3" 
-    
-    # 3600 saniye = 1 Saat
     command = [
         "ffmpeg", "-y",
         "-loop", "1", "-framerate", "1", "-i", IMAGE_FILE,
@@ -74,52 +69,35 @@ def render_video():
         "-shortest",
         OUTPUT_VIDEO
     ]
-    
     subprocess.run(command, check=True)
-    print("Video başarıyla oluşturuldu. YouTube yükleme adımına geçiliyor.")
 
-# --- 4. YOUTUBE'A YÜKLEME ---
+# --- 4. YOUTUBE YÜKLEME ---
 def upload_to_youtube():
-    if not os.path.exists('token.pickle'):
-        print("KRİTİK HATA: token.pickle dosyası bulunamadı! Yükleme iptal edildi.")
-        return
-
+    if not os.path.exists('token.pickle'): return
     with open('token.pickle', 'rb') as token:
         credentials = pickle.load(token)
-            
     youtube = build('youtube', 'v3', credentials=credentials)
-    
     body = {
         'snippet': {
             'title': VIDEO_TITLE,
-            'description': f"{VIDEO_DESC}\n\n--- CONTENT PLAN ---\n{SHORTS_DATA}",
+            'description': f"{VIDEO_DESC}\n\n{SHORTS_DATA}",
             'tags': VIDEO_TAGS,
-            'categoryId': '10' # Music/Ambient
+            'categoryId': '10'
         },
-        'status': {
-            'privacyStatus': 'public'
-        }
+        'status': {'privacyStatus': 'public'}
     }
-    
     media = MediaFileUpload(OUTPUT_VIDEO, chunksize=1024*1024*5, resumable=True)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-    
     response = None
-    print("YouTube API bağlantısı kuruldu. Dosya gönderiliyor...")
     while response is None:
         status, response = request.next_chunk()
-        if status:
-            print(f"Yükleme İlerlemesi: %{int(status.progress() * 100)}")
-            
-    print(f"TEBRİKLER! @TheQuietCorner-yt videosu yayında. ID: {response['id']}")
+        if status: print(f"Yükleniyor: %{int(status.progress() * 100)}")
+    print(f"Bitti! ID: {response['id']}")
 
-# --- 5. ANA ÇALIŞTIRMA BLOKU ---
 if __name__ == "__main__":
     try:
-        # download_image artık parametre almıyor, içindeki mantığı kullanıyor
         download_image(IMAGE_FILE)
         render_video()
         upload_to_youtube()
-        print("SÜREÇ BAŞARIYLA TAMAMLANDI.")
     except Exception as e:
-        print(f"SİSTEM HATASI: {e}")
+        print(f"HATA: {e}")
