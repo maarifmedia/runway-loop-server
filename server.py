@@ -6,53 +6,65 @@ from googleapiclient.http import MediaFileUpload
 import pickle
 
 # --- 1. AYARLAR VE DEĞİŞKENLER ---
-# Make.com'dan gelen IMAGE_URL'yi alıyoruz. Gelmezse None olacak.
 IMAGE_URL = os.environ.get("IMAGE_URL")
 VIDEO_TITLE = os.environ.get("VIDEO_TITLE", "Peaceful Relaxation - The Quiet Corner")
-VIDEO_DESC = os.environ.get("VIDEO_DESC", "Relaxing ambient sounds for sleep and focus. @TheQuietCorner-yt")
+VIDEO_DESC = os.environ.get("VIDEO_DESC", "Relaxing ambient sounds. @TheQuietCorner-yt")
 VIDEO_TAGS = (os.environ.get("VIDEO_TAGS") or "sleep,relaxing,asmr").split(",")
-
-# Ses dosyası ve Shorts planı
 AUDIO_FILE = os.environ.get("AUDIO_FILENAME", "somine_yagmur.mp3.mp3")
-SHORTS_DATA = os.environ.get("SHORTS_PLAN", "No shorts plan provided.")
+SHORTS_DATA = os.environ.get("SHORTS_PLAN", "")
 
-# Sabit dosyalar
 IMAGE_FILE = "arkaplan.jpg"
 OUTPUT_VIDEO = "hazir_video.mp4"
 
-# --- 2. GÖRSELİ İNDİRME ---
+# --- 2. AKILLI GÖRSEL SEÇİCİ VE İNDİRME ---
 def download_image(url, filename):
-    # Eğer URL gelmediyse veya içinde hatalı 'varsayilan' ibaresi varsa yedek link kullan
-    if not url or "varsayilan" in url or "link.com" in url:
-        url = "https://images.unsplash.com/photo-1542332213-31f87348057f?q=80&w=1920"
-        print("BİLGİ:IMAGE_URL boş veya hatalı geldi. Yedek manzara görseli indiriliyor...")
+    # Eski dosyayı temizle (Cache engelleme)
+    if os.path.exists(filename):
+        os.remove(filename)
+
+    # Görsel çeşitliliği için başlığa göre anahtar kelime analizi
+    title_lower = VIDEO_TITLE.lower()
+    search_terms = "nature,calm,peaceful" # Varsayılan
     
-    print(f"Görsel indiriliyor: {url}")
+    if "cabin" in title_lower or "house" in title_lower:
+        search_terms = "cozy,cabin,fireplace,interior"
+    elif "lake" in title_lower or "water" in title_lower:
+        search_terms = "lakeside,reflections,calm,water"
+    elif "rain" in title_lower or "storm" in title_lower:
+        search_terms = "rainy,window,dark,ambient"
+    elif "forest" in title_lower or "woods" in title_lower:
+        search_terms = "forest,trees,misty,ethereal"
+    elif "music" in title_lower:
+        search_terms = "aesthetic,minimalist,calm"
+
+    # Eğer Make'den gelen URL hatalıysa veya 'varsayilan' ise Unsplash'e akıllı arama gönder
+    if not url or "varsayilan" in url or "link.com" in url:
+        url = f"https://source.unsplash.com/featured/1920x1080/?{search_terms}"
+    
+    print(f"Görsel indiriliyor (Tema: {search_terms}): {url}")
     try:
-        response = requests.get(url, timeout=30)
+        # Unsplash bazen doğrudan linke yönlendirir, o yüzden allow_redirects açık
+        response = requests.get(url, timeout=30, allow_redirects=True)
         response.raise_for_status()
         with open(filename, 'wb') as f:
             f.write(response.content)
         print("Görsel başarıyla indirildi.")
     except Exception as e:
-        print(f"Görsel indirme hatası: {e}. İşleme yedek görsel aranarak devam ediliyor.")
-        # Burada çökmemesi için tekrar deniyoruz
-        fallback_url = "https://images.unsplash.com/photo-1542332213-31f87348057f"
-        f_res = requests.get(fallback_url)
+        print(f"Hata: {e}. Yedek görsel kullanılıyor.")
+        backup = "https://images.unsplash.com/photo-1542332213-31f87348057f"
+        f_res = requests.get(backup)
         with open(filename, 'wb') as f:
             f.write(f_res.content)
 
-# --- 3. RENDER İŞLEMİ (TEST İÇİN 60 SANİYE) ---
+# --- 3. 1 SAATLİK RENDER İŞLEMİ (3600 SANİYE) ---
 def render_video():
-    print(f"Video render işlemi {AUDIO_FILE} sesi ile başlıyor...")
+    print(f"1 Saatlik video render işlemi {AUDIO_FILE} ile başlıyor...")
     
     aktif_ses = AUDIO_FILE
     if not os.path.exists(aktif_ses):
-        print(f"UYARI: {aktif_ses} bulunamadı! Varsayılan sese (somine_yagmur.mp3.mp3) geçiliyor.")
         aktif_ses = "somine_yagmur.mp3.mp3" 
     
-    # DİKKAT: Test için süreyi 60 saniye yaptık. 
-    # Sistem çalıştığında bunu tekrar 3600 yapabilirsin.
+    # Süreyi 3600 (1 saat) olarak sabitledik
     render_suresi = "3600" 
 
     command = [
@@ -67,14 +79,12 @@ def render_video():
     ]
     
     subprocess.run(command, check=True)
-    print(f"Harika! {render_suresi} saniyelik video başarıyla oluşturuldu.")
+    print("Video başarıyla oluşturuldu.")
 
 # --- 4. YOUTUBE'A YÜKLEME ---
 def upload_to_youtube():
-    print("YouTube'a yükleme aşamasına geçildi...")
-    
     if not os.path.exists('token.pickle'):
-        print("KRİTİK HATA: token.pickle dosyası bulunamadı! Yükleme yapılamıyor.")
+        print("HATA: token.pickle yok!")
         return
 
     with open('token.pickle', 'rb') as token:
@@ -85,7 +95,7 @@ def upload_to_youtube():
     body = {
         'snippet': {
             'title': VIDEO_TITLE,
-            'description': f"{VIDEO_DESC}\n\n--- Content Plan ---\n{SHORTS_DATA}",
+            'description': f"{VIDEO_DESC}\n\n{SHORTS_DATA}",
             'tags': VIDEO_TAGS,
             'categoryId': '10'
         },
@@ -98,21 +108,17 @@ def upload_to_youtube():
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     
     response = None
-    print("Yükleme işlemi başlatılıyor...")
     while response is None:
         status, response = request.next_chunk()
         if status:
             print(f"Yükleniyor... %{int(status.progress() * 100)}")
             
-    print(f"TEBRİKLER! Video yüklendi. ID: {response['id']}")
+    print(f"BAŞARILI! Video ID: {response['id']}")
 
-# --- 5. ANA ÇALIŞTIRMA ---
 if __name__ == "__main__":
     try:
         download_image(IMAGE_URL, IMAGE_FILE)
         render_video()
         upload_to_youtube()
-        print("TÜM İŞLEMLER BAŞARIYLA TAMAMLANDI!")
     except Exception as e:
-        print(f"BİR HATA OLUŞTU: {e}")
-
+        print(f"KRİTİK HATA: {e}")
