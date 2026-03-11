@@ -35,7 +35,7 @@ def download_image():
     # DAĞLARI VE AYDINLIK RESİMLERİ SİLİYORUZ (-mountain, -peak, -sun)
     url = f"https://images.unsplash.com/featured/1920x1080/?{terms},-mountain,-peak,-sun&sig={random.randint(1, 99999)}"
     
-    print(f"Görsel Aranıyor (Ateş Odaklı): {url}")
+    print(f"Görsel Aranıyor: {url}")
     
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -46,6 +46,7 @@ def download_image():
         print("Görsel başarıyla indirildi.")
     except Exception as e:
         print(f"Hata: {e}. Sabit ateş görseline geçiliyor...")
+        # Unsplash hata verirse doğrudan güvenli linkler
         safe_links = [
             "https://images.unsplash.com/photo-1542332213-31f87348057f",
             "https://images.unsplash.com/photo-1473286835901-04adb1afab03"
@@ -54,13 +55,13 @@ def download_image():
         with open(IMAGE_FILE, 'wb') as f:
             f.write(res.content)
 
-# --- 3. 1 SAATLİK GÜVENLİ RENDER (BOYUT HATALARINI ÖNLER) ---
+# --- 3. 1 SAATLİK GÜVENLİ RENDER ---
 def render_video():
     if not os.path.exists(IMAGE_FILE): return
-    print("1 Saatlik render başladı. Bu işlem yaklaşık 25-30 dakika sürebilir...")
+    print("Render işlemi başladı (1 Saat). GitHub Actions üzerinden devam ediyor...")
     ses = AUDIO_FILE if os.path.exists(AUDIO_FILE) else "somine_yagmur.mp3.mp3"
 
-    # FFmpeg filtresi: Boyut hatalarını (Invalid argument) önlemek için ölçeklendirme ekledik
+    # FFmpeg filtresi: Boyut hatalarını önlemek için ölçeklendirme ekledik
     command = [
         "ffmpeg", "-y",
         "-loop", "1", "-framerate", "1", "-i", IMAGE_FILE,
@@ -73,7 +74,7 @@ def render_video():
         OUTPUT_VIDEO
     ]
     subprocess.run(command, check=True)
-    print("Render bitti!")
+    print("Video başarıyla oluşturuldu.")
 
 # --- 4. YOUTUBE YÜKLEME ---
 def upload():
@@ -87,7 +88,7 @@ def upload():
     body = {
         'snippet': {
             'title': VIDEO_TITLE, 
-            'description': f"{VIDEO_DESC}\n\n--- CONTENT PLAN ---\n{SHORTS_DATA}", 
+            'description': f"{VIDEO_DESC}\n\n{SHORTS_DATA}", 
             'tags': VIDEO_TAGS, 
             'categoryId': '10'
         },
