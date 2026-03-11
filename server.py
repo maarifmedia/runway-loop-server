@@ -17,7 +17,7 @@ SHORTS_DATA = os.environ.get("SHORTS_PLAN", "")
 IMAGE_FILE = "arkaplan.jpg"
 OUTPUT_VIDEO = "hazir_video.mp4"
 
-# --- 2. ASLA DAĞ GETİRMEYEN AKILLI GÖRSEL İNDİRİCİ ---
+# --- 2. ASLA DAĞ GETİRMEYEN GÖRSEL İNDİRİCİ ---
 def download_image():
     if os.path.exists(IMAGE_FILE):
         os.remove(IMAGE_FILE)
@@ -26,31 +26,26 @@ def download_image():
     
     # Kategori Belirleme (Ateş ve Gece temasını her zaman zorunlu tutuyoruz)
     if any(x in title_lower for x in ["cabin", "house", "room", "indoor"]):
-        # İç mekan ateş teması
         terms = "cozy-fireplace,indoor-fire,dark-cabin-room"
     elif any(x in title_lower for x in ["lake", "water", "lakeside"]):
-        # Göl kenarı kamp ateşi teması
         terms = "campfire-lake,bonfire-shore,night-lake-fire"
     else:
-        # Genel huzurlu ateş teması
         terms = "burning-logs,fireplace-close-up,cozy-fire-night"
 
-    # DAĞLARI VE AYDINLIK RESİMLERİ SİLİYORUZ
-    # Sorguya '-mountain,-peak,-sun' ekleyerek Unsplash'i karanlık/ateşli görsellere zorluyoruz
-    url = f"https://source.unsplash.com/featured/1920x1080/?{terms},-mountain,-peak,-sun&sig={random.randint(1, 99999)}"
+    # DAĞLARI VE AYDINLIK RESİMLERİ SİLİYORUZ (-mountain, -peak, -sun)
+    url = f"https://images.unsplash.com/featured/1920x1080/?{terms},-mountain,-peak,-sun&sig={random.randint(1, 99999)}"
     
     print(f"Görsel Aranıyor (Ateş Odaklı): {url}")
     
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=25)
         response.raise_for_status()
         with open(IMAGE_FILE, 'wb') as f:
             f.write(response.content)
         print("Görsel başarıyla indirildi.")
     except Exception as e:
-        print(f"Hata: {e}. Sabit ateş görseli seçiliyor...")
-        # Unsplash hata verirse doğrudan şömine linkleri
+        print(f"Hata: {e}. Sabit ateş görseline geçiliyor...")
         safe_links = [
             "https://images.unsplash.com/photo-1542332213-31f87348057f",
             "https://images.unsplash.com/photo-1473286835901-04adb1afab03"
@@ -62,10 +57,10 @@ def download_image():
 # --- 3. 1 SAATLİK GÜVENLİ RENDER (BOYUT HATALARINI ÖNLER) ---
 def render_video():
     if not os.path.exists(IMAGE_FILE): return
-    print("1 Saatlik render başladı. Lütfen bekleyin, loglar bir süre güncellenmeyebilir...")
+    print("1 Saatlik render başladı. Bu işlem yaklaşık 25-30 dakika sürebilir...")
     ses = AUDIO_FILE if os.path.exists(AUDIO_FILE) else "somine_yagmur.mp3.mp3"
 
-    # FFmpeg filtresi: Resmi 1080p'ye zorlar ve titremeyi önler
+    # FFmpeg filtresi: Boyut hatalarını (Invalid argument) önlemek için ölçeklendirme ekledik
     command = [
         "ffmpeg", "-y",
         "-loop", "1", "-framerate", "1", "-i", IMAGE_FILE,
