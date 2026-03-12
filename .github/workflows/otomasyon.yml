@@ -1,38 +1,37 @@
 name: Uyku Kanali Otomasyonu
 
-# Make.com'dan "video_uret" şifresiyle gelecek webhook sinyalini dinler
 on:
   repository_dispatch:
     types: [video_uret] 
 
 jobs:
   build_and_upload:
-    runs-on: ubuntu-latest # Bize ücretsiz verilen 7GB RAM'li Linux sunucusu
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Repoyu Klonla (Dosyaları Al)
+    - name: Repoyu Klonla
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # En güncel dosyaları (videoyu) çekmek için
 
     - name: Python Kurulumu
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
 
-    - name: FFmpeg Kurulumu (Video motoru)
+    - name: FFmpeg Kurulumu
       run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
     - name: Kütüphaneleri Yükle
       run: pip install -r requirements.txt
 
-    - name: Python Kodunu Çalıştır (Video Üret ve Yükle)
-      # Make.com'dan gelen paketleri (payload) Python dosyamıza aktarıyoruz
+    - name: Python Kodunu Çalıştır
       env:
-        IMAGE_URL: ${{ github.event.client_payload.IMAGE_URL }}
+        # Make.com'dan gelen video başlığı ve açıklaması
         VIDEO_TITLE: ${{ github.event.client_payload.VIDEO_TITLE }}
         VIDEO_DESC: ${{ github.event.client_payload.VIDEO_DESC }}
         VIDEO_TAGS: ${{ github.event.client_payload.VIDEO_TAGS }}
-        AUDIO_FILENAME: ${{ github.event.client_payload.AUDIO_FILENAME }}
-        SHORTS_PLAN: ${{ github.event.client_payload.SHORTS_PLAN }}
+        # YouTube Secrets (Bunların GitHub Settings -> Secrets kısmında kayıtlı olması şart)
         YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
         YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
         YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
