@@ -1,131 +1,98 @@
-import subprocess
 import os
-import google.oauth2.credentials
-import googleapiclient.discovery
+import datetime
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# --- AYARLAR ---
-INPUT_VIDEO = "assets/current_video.mp4"
-AUDIO_CHOICE_FILE = "assets/audio_choice.txt"
-OUTPUT_VIDEO = "final_output_1hour.mp4"
-TARGET_DURATION = 3600  # 1 Saat (Saniye)
+# MoviePy v2.x uyumluluğu
+try:
+    from moviepy import VideoFileClip, concatenate_videoclips
+except ImportError:
+    from moviepy.editor import VideoFileClip, concatenate_videoclips
 
-# GitHub Actions Env (Make.com'dan Payload ile gelen veriler)
-VIDEO_TITLE = os.environ.get("VIDEO_TITLE", "Cozy Ambience - Relaxing Night")
-VIDEO_DESC = os.environ.get("VIDEO_DESC", "Enjoy this relaxing atmosphere.")
-VIDEO_TAGS = os.environ.get("VIDEO_TAGS", "ambience,relax,sleep")
+# --- YAPILANDIRMA ---
+CLIENT_SECRETS_FILE = "client_secrets.json"
+TOKEN_FILE = "token.json"
+SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+INPUT_VIDEO = "assets/current_video.mp4" 
+OUTPUT_VIDEO = "final_loop_video.mp4"   
 
-# YouTube Oynatma Listesi ID'lerin
-PLAYLIST_NATURE = "PLBSKEl0NRvK--0dqTjSY61Jx6I3gX74iH"  # Sadece Doğa Sesleri
-PLAYLIST_MUSIC = "PLBSKEl0NRvK_EW7SZvIqgeEO3nR3mA5_9"   # Müzikli (Melodik)
-
-def get_duration(file_path):
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-    )
-    return float(result.stdout)
-
-def create_loop():
-    # Varsayılan ses
-    selected_audio = "assets/background_ambient.mp3"
-    is_melodic = False
+def get_authenticated_service():
+    """YouTube API kimlik doğrulama sürecini yönetir."""
+    creds = None
+    if os.path.exists(TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     
-    # Gemini'nin ses seçimini oku
-    if os.path.exists(AUDIO_CHOICE_FILE):
-        with open(AUDIO_CHOICE_FILE, 'r') as f:
-            choice = f.read().strip()
-            # Eğer seçim adında 'melodic' veya 'music' geçiyorsa müzikli listeye gidecek
-            if "melodic" in choice or "music" in choice:
-                is_melodic = True
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            # Bulut ortamında (GitHub Actions) etkileşimli giriş yapılamaz.
+            if not os.path.exists(CLIENT_SECRETS_FILE):
+                raise FileNotFoundError("Kimlik dosyası bulunamadı!")
             
-            potential_file = f"assets/{choice}.mp3"
-            if os.path.exists(potential_file):
-                selected_audio = potential_file
+            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+            creds = flow.run_local_server(port=0, prompt='select_account')
+        
+        with open(TOKEN_FILE, 'w') as token:
+            token.write(creds.to_json())
 
-    print(f"--- Video Hazırlanıyor ---")
-    print(f"Ses Dosyası: {selected_audio}")
-    print(f"Müzikli mi?: {is_melodic}")
+    return build('youtube', 'v3', credentials=creds)
 
-    if not os.path.exists(INPUT_VIDEO):
-        print("Hata: Kaynak video (current_video.mp4) bulunamadı!")
-        return None
-
-    video_dur = get_duration(INPUT_VIDEO)
-    loop_count = int(TARGET_DURATION // video_dur) + 1
-
-    # FFmpeg: Döngüye sok, sesi ekle, 1 saatte kes ve paketle
-    cmd = [
-        "ffmpeg", "-y",
-        "-stream_loop", str(loop_count),
-        "-i", INPUT_VIDEO,
-        "-i", selected_audio,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-shortest", "-t", str(TARGET_DURATION),
-        "-pix_fmt", "yuv420p",
-        OUTPUT_VIDEO
-    ]
-    subprocess.run(cmd)
-    return is_melodic
-
-def upload_to_youtube(is_melodic):
-    print("--- YouTube Yükleme İşlemi Başlıyor ---")
+def create_one_hour_loop(input_path, output_path, target_minutes=60):
+    """Veo 3 videosunu (sesiyle birlikte) 1 saatlik döngüye sokar."""
+    print(f"--- Veo 3 İşleniyor: {input_path} ---")
+    clip = VideoFileClip(input_path)
     
-    # Secrets'tan gelen yetki bilgileri
-    client_id = os.environ.get("YOUTUBE_CLIENT_ID")
-    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET")
-    refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN")
-
-    creds = google.oauth2.credentials.Credentials(
-        None, 
-        refresh_token=refresh_token, 
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=client_id, 
-        client_secret=client_secret
-    )
+    target_seconds = target_minutes * 60
+    iterations = int(target_seconds / clip.duration) + 1
     
-    youtube = googleapiclient.discovery.build("youtube", "v3", credentials=creds)
+    print(f"Video {iterations} kez döngüye alınıyor...")
+    # Sesiyle beraber uç uca ekle
+    final_clip = concatenate_videoclips([clip] * iterations)
+    
+    # Tam süreye ayarla
+    final_clip = final_clip.with_duration(target_seconds)
+    
+    print("Video dosyası oluşturuluyor (Render)...")
+    final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac", fps=24)
+    
+    clip.close()
+    final_clip.close()
+    print("--- 1 Saatlik Video Hazır! ---")
 
-    # 1. Videoyu Yükle
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": VIDEO_TITLE,
-                "description": VIDEO_DESC,
-                "tags": VIDEO_TAGS.split(","),
-                "categoryId": "10"  # Müzik kategorisi
-            },
-            "status": {
-                "privacyStatus": "public",
-                "selfDeclaredMadeForKids": False
-            }
+def upload_video(youtube, file_path):
+    """YouTube'a yükleme yapar."""
+    now = datetime.datetime.now()
+    body = {
+        'snippet': {
+            'title': f"Deep Focus Ambiance - {now.strftime('%B %Y')} | Aesthetic Loop",
+            'description': 'Welcome to your quiet corner. Relax and focus with this Veo 3 generated ambiance. #ambiance #cozy #peaceful #thequietcorner',
+            'tags': ['ambiance', 'cozy', 'study', 'relax', 'veo3'],
+            'categoryId': '10'
         },
-        media_body=MediaFileUpload(OUTPUT_VIDEO, chunksize=-1, resumable=True)
-    )
-    response = request.execute()
-    video_id = response["id"]
-    print(f"Video Başarıyla Yüklendi! ID: {video_id}")
-
-    # 2. Oynatma Listesine Ekle
-    target_playlist = PLAYLIST_MUSIC if is_melodic else PLAYLIST_NATURE
-    
-    youtube.playlistItems().insert(
-        part="snippet",
-        body={
-            "snippet": {
-                "playlistId": target_playlist,
-                "resourceId": {
-                    "kind": "youtube#video",
-                    "videoId": video_id
-                }
-            }
+        'status': {
+            'privacyStatus': 'public',
+            'selfDeclaredMadeForKids': False,
         }
-    ).execute()
-    print(f"Video şu listeye eklendi: {target_playlist}")
+    }
+
+    media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
+    request = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media)
+    
+    print("YouTube'a yükleme başladı...")
+    response = request.execute()
+    print(f"Başarılı! Video yüklendi. ID: {response.get('id')}")
 
 if __name__ == "__main__":
-    melodic_flag = create_loop()
-    if melodic_flag is not None:
-        upload_to_youtube(melodic_flag)
+    try:
+        service = get_authenticated_service()
+        if os.path.exists(INPUT_VIDEO):
+            create_one_hour_loop(INPUT_VIDEO, OUTPUT_VIDEO)
+            upload_video(service, OUTPUT_VIDEO)
+        else:
+            print(f"Hata: {INPUT_VIDEO} bulunamadı!")
+    except Exception as e:
+        print(f"Hata: {str(e)}")
