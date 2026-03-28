@@ -3,8 +3,8 @@ name: YouTube Otomasyonu - Veo 3 İşleyici
 on:
   push:
     paths:
-      - 'assets/current_video.mp4'
-  workflow_dispatch:
+      - 'assets/current_video.mp4'  # Make.com buraya video attığında tetiklenir
+  workflow_dispatch:              # Elle (manuel) başlatmak isterseniz
 
 jobs:
   build-and-upload:
@@ -26,7 +26,7 @@ jobs:
 
     - name: Kimlik Bilgilerini Hazırla
       run: |
-        # GitHub Secrets içindeki metinleri gerçek dosyalara dönüştürür
+        # GitHub Secrets içindeki metinleri geçici dosyalara (JSON) dönüştürür
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
         echo '${{ secrets.TOKEN_JSON }}' > token.json
 
