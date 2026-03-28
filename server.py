@@ -6,7 +6,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# MoviePy v2.x ve v1.x uyumluluğu için kontrol
+# MoviePy v2.x uyumluluğu kontrolü
 try:
     from moviepy import VideoFileClip, concatenate_videoclips
     HAS_V2 = True
@@ -14,91 +14,95 @@ except ImportError:
     from moviepy.editor import VideoFileClip, concatenate_videoclips
     HAS_V2 = False
 
-# --- AYARLAR ---
+# --- DOSYA YOLLARI ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube']
+
 INPUT_VIDEO = "assets/current_video.mp4" 
 OUTPUT_VIDEO = "final_loop_video.mp4"
-THUMBNAIL_IMAGE = "assets/s.png" # Make.com tarafından gönderilen kapak fotoğrafı
+THUMBNAIL_IMAGE = "assets/s.png"
+
+# Gemini/Make tarafından doldurulan dosyalar
+TITLE_FILE = "assets/title.txt"
+DESC_FILE = "assets/description.txt"
+TAGS_FILE = "assets/tags.txt"
+AUDIO_CHOICE_FILE = "assets/audio_choice.txt"
+
+# --- OYNATMA LİSTESİ ID'LERİ ---
+PLAYLIST_NO_MUSIC = "PLBSKEl0NRvK--0dqTjSY61Jx6I3gX74iH"  # Müziksiz (Ambiance)
+PLAYLIST_WITH_MUSIC = "PLBSKEl0NRvK_EW7SZvIqgeEO3nR3mA5_9" # Müzikli (Soft)
+
+def read_asset_file(filepath, default_value=""):
+    """Dosyayı okur, yoksa varsayılanı döner."""
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return f.read().strip()
+        except:
+            return default_value
+    return default_value
 
 def get_authenticated_service():
-    """YouTube API kimlik doğrulama sürecini yönetir."""
+    """YouTube API bağlantısını kurar."""
     creds = None
-    # Eğer token.json varsa (GitHub Secrets'tan oluşturulmuşsa) kullan
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    
-    # Kimlik bilgisi yoksa veya geçersizse yenile veya giriş yaptır
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             if not os.path.exists(CLIENT_SECRETS_FILE):
                 raise FileNotFoundError("client_secrets.json bulunamadı!")
-            
-            # Yerel testlerde tarayıcı açar, GitHub'da bu aşamaya gelmemesi için TOKEN_JSON yüklü olmalıdır
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
             creds = flow.run_local_server(port=0, prompt='select_account')
-        
-        # Gelecekteki kullanımlar için token'ı kaydet
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
-
     return build('youtube', 'v3', credentials=creds)
 
 def create_one_hour_loop(input_path, output_path, target_minutes=60):
-    """Veo 3 videosunu belirlenen süreye kadar döngüye sokar."""
-    print(f"--- Video İşleme Başladı: {input_path} ---")
+    """Veo 3 videosunu 1 saatlik döngüye sokar."""
+    print(f"--- Veo 3 İşleme Başladı: {input_path} ---")
     clip = VideoFileClip(input_path)
-    
     target_seconds = target_minutes * 60
-    # Kaç tekrar gerektiğini hesapla
     iterations = int(target_seconds / clip.duration) + 1
     
-    print(f"Video {iterations} kez uç uca ekleniyor...")
     final_clip = concatenate_videoclips([clip] * iterations)
     
-    # Videoyu tam süreye ayarla
     if HAS_V2:
         final_clip = final_clip.with_duration(target_seconds)
     else:
         final_clip = final_clip.subclip(0, target_seconds)
     
-    print("Video dosyası oluşturuluyor (Render)...")
     final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac", fps=24)
-    
     clip.close()
     final_clip.close()
-    print("--- Video Render Tamamlandı! ---")
-
-def upload_thumbnail(youtube, video_id, thumbnail_path):
-    """Yüklenen videonun kapak fotoğrafını (s.png) ayarlar."""
-    if os.path.exists(thumbnail_path):
-        print(f"Kapak fotoğrafı yükleniyor: {thumbnail_path}")
-        try:
-            youtube.thumbnails().set(
-                videoId=video_id,
-                media_body=MediaFileUpload(thumbnail_path)
-            ).execute()
-            print("Kapak fotoğrafı başarıyla güncellendi!")
-        except Exception as e:
-            print(f"Kapak fotoğrafı yüklenirken hata: {e}")
-    else:
-        print("Kapak fotoğrafı (s.png) bulunamadı, varsayılan bırakılıyor.")
+    print("--- Render Tamamlandı ---")
 
 def upload_video(youtube, file_path):
-    """Videoyu YouTube'a yükler ve kapak fotoğrafını ekler."""
-    now = datetime.datetime.now()
+    """Videoyu Gemini SEO bilgileriyle yükler ve doğru playlist'e ekler."""
+    title = read_asset_file(TITLE_FILE, f"The Quiet Corner Ambiance - {datetime.datetime.now().strftime('%B %Y')}")
+    description = read_asset_file(DESC_FILE, "Relax and focus with @TheQuietCorner-yt.")
+    tags_raw = read_asset_file(TAGS_FILE, "ambiance,relax,veo3")
+    tags = [t.strip() for t in tags_raw.split(',') if t.strip()]
+    
+    # Müzik durumunu kontrol et
+    audio_choice = read_asset_file(AUDIO_CHOICE_FILE, "").lower()
+    is_music = any(word in audio_choice for word in ["music", "müzik", "soft", "relaxing"])
+    playlist_id = PLAYLIST_WITH_MUSIC if is_music else PLAYLIST_NO_MUSIC
+    
+    print(f"Yükleme Başlığı: {title}")
+    print(f"Kategori: {'Müzikli' if is_music else 'Müziksiz (Ambiance)'}")
+
     body = {
         'snippet': {
-            'title': f"Deep Focus Ambiance - {now.strftime('%B %Y')} | Aesthetic Loop",
-            'description': 'Welcome to your quiet corner. Relax and focus with this Veo 3 generated ambiance. #ambiance #cozy #peaceful #thequietcorner',
-            'tags': ['ambiance', 'cozy', 'study', 'relax', 'veo3', 'nature'],
-            'categoryId': '10' # Müzik/Eğlence
+            'title': title,
+            'description': description,
+            'tags': tags,
+            'categoryId': '10'
         },
         'status': {
-            'privacyStatus': 'public', 
+            'privacyStatus': 'public',
             'selfDeclaredMadeForKids': False,
         }
     }
@@ -106,26 +110,37 @@ def upload_video(youtube, file_path):
     media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
     request = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media)
     
-    print("YouTube'a yükleme işlemi başlatıldı...")
     response = request.execute()
     video_id = response.get('id')
-    print(f"Başarılı! Video yüklendi. Video ID: {video_id}")
+    print(f"Başarılı! Video yüklendi: https://youtu.be/{video_id}")
     
-    # Küçük resmi yükle
-    upload_thumbnail(youtube, video_id, THUMBNAIL_IMAGE)
+    # Kapak fotoğrafını (s.png) yükle
+    if os.path.exists(THUMBNAIL_IMAGE):
+        youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(THUMBNAIL_IMAGE)).execute()
+        print("Kapak fotoğrafı güncellendi.")
+
+    # Oynatma listesine ekle
+    try:
+        youtube.playlistItems().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {"kind": "youtube#video", "videoId": video_id}
+                }
+            }
+        ).execute()
+        print(f"Oynatma listesine eklendi (ID: {playlist_id})")
+    except Exception as e:
+        print(f"Oynatma listesi hatası: {e}")
 
 if __name__ == "__main__":
     try:
-        # 1. API Bağlantısını Kur
-        youtube_service = get_authenticated_service()
-        
-        # 2. Döngü Videosunu Oluştur
+        service = get_authenticated_service()
         if os.path.exists(INPUT_VIDEO):
             create_one_hour_loop(INPUT_VIDEO, OUTPUT_VIDEO)
-            # 3. Yükle ve Kapak Fotoğrafını Ayarla
-            upload_video(youtube_service, OUTPUT_VIDEO)
+            upload_video(service, OUTPUT_VIDEO)
         else:
-            print(f"HATA: {INPUT_VIDEO} dosyası bulunamadı!")
-            
+            print(f"Hata: {INPUT_VIDEO} bulunamadı!")
     except Exception as e:
-        print(f"Beklenmedik bir hata oluştu: {str(e)}")
+        print(f"Sistem Hatası: {str(e)}")
