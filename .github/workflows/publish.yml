@@ -3,13 +3,17 @@ name: YouTube Otomasyonu - Veo 3 İşleyici
 on:
   push:
     paths:
-      - 'assets/current_video.mp4'  # Make.com buraya video attığında tetiklenir
-  workflow_dispatch:              # Elle (manuel) başlatmak isterseniz
+      - 'assets/current_video.mp4'
+  workflow_dispatch:
 
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     
+    # GitHub'ın istediği Node 24 standardına zorlar (Uyarıyı susturur)
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
     - name: Depoyu Kontrol Et
       uses: actions/checkout@v4
@@ -26,7 +30,6 @@ jobs:
 
     - name: Kimlik Bilgilerini Hazırla
       run: |
-        # GitHub Secrets içindeki metinleri geçici dosyalara (JSON) dönüştürür
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
         echo '${{ secrets.TOKEN_JSON }}' > token.json
 
