@@ -14,58 +14,56 @@ except ImportError:
     from moviepy.editor import VideoFileClip, concatenate_videoclips
     HAS_V2 = False
 
-# --- AYARLAR (Make.com ile tam uyumlu) ---
+# --- AYARLAR ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-# SCOPE HATASINI ÇÖZEN KRİTİK SATIR: Sadece yükleme yetkisi istenir.
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
 
 INPUT_VIDEO = "assets/current_video.mp4" 
 OUTPUT_VIDEO = "final_loop_video.mp4"
 THUMBNAIL_IMAGE = "assets/s.png"
 
-# Gemini (Make.com) tarafından gönderilen SEO dosyaları
+# Gemini (Make.com) tarafından güncellenmesi gereken dosyalar
 TITLE_FILE = "assets/title.txt"
 DESC_FILE = "assets/description.txt"
 TAGS_FILE = "assets/tags.txt"
 
-def read_asset_file(filepath, default_value=""):
-    """Dosyayı okur, yoksa varsayılan metni döner."""
+def read_asset_file(filepath, label, default_value=""):
+    """Dosyayı okur ve durumu raporlar."""
     if os.path.exists(filepath):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
-                return f.read().strip()
-        except:
-            return default_value
+                content = f.read().strip()
+                if content:
+                    print(f"[DOSYA BULUNDU] {label}: {content[:30]}...")
+                    return content
+                else:
+                    print(f"[UYARI] {label} dosyası boş! Varsayılan kullanılıyor.")
+        except Exception as e:
+            print(f"[HATA] {label} okunurken sorun oluştu: {e}")
+    else:
+        print(f"[DOSYA YOK] {filepath} bulunamadı! Varsayılan değer atanıyor.")
     return default_value
 
 def get_authenticated_service():
-    """YouTube API kimlik doğrulama sürecini yönetir."""
     creds = None
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             if not os.path.exists(CLIENT_SECRETS_FILE):
                 raise FileNotFoundError("client_secrets.json bulunamadı!")
-            
-            # Yerel test için tarayıcı açar, GitHub'da TOKEN_JSON kullanılmalıdır.
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
             creds = flow.run_local_server(port=0, prompt='select_account')
-        
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
-
     return build('youtube', 'v3', credentials=creds)
 
 def create_one_hour_loop(input_path, output_path, target_minutes=60):
-    """Veo 3 videosunu 1 saatlik döngüye sokar."""
-    print(f"--- Video İşleme Başladı (Döngü Süresi: {target_minutes} dk) ---")
+    print(f"--- Video İşleme Başladı: {input_path} ---")
     clip = VideoFileClip(input_path)
-    
     target_seconds = target_minutes * 60
     iterations = int(target_seconds / clip.duration) + 1
     
@@ -77,29 +75,24 @@ def create_one_hour_loop(input_path, output_path, target_minutes=60):
     else:
         final_clip = final_clip.subclip(0, target_seconds)
     
-    print("Video Render ediliyor (Lütfen bekleyin)...")
     final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac", fps=24)
-    
     clip.close()
     final_clip.close()
-    print("--- Render Tamamlandı! ---")
+    print("--- Render Tamamlandı ---")
 
 def upload_video(youtube, file_path):
-    """Videoyu YouTube'a yükler ve Gemini SEO bilgilerini uygular."""
-    # Gemini'den gelen dinamik verileri oku
-    title = read_asset_file(TITLE_FILE, f"Deep Focus Ambiance - {datetime.datetime.now().strftime('%B %Y')}")
-    description = read_asset_file(DESC_FILE, "Welcome to @TheQuietCorner-yt. Enjoy this Veo 3 ambiance.")
-    tags_raw = read_asset_file(TAGS_FILE, "ambiance,relax,veo3")
+    # Gemini verilerini oku
+    title = read_asset_file(TITLE_FILE, "BAŞLIK", f"Deep Focus Ambiance - {datetime.datetime.now().strftime('%B %Y')}")
+    description = read_asset_file(DESC_FILE, "AÇIKLAMA", "Relaxing ambiance created with Veo 3. Follow @TheQuietCorner-yt.")
+    tags_raw = read_asset_file(TAGS_FILE, "ETİKETLER", "ambiance,relax,veo3")
     tags = [t.strip() for t in tags_raw.split(',') if t.strip()]
-
-    print(f"Yüklenen Başlık: {title}")
 
     body = {
         'snippet': {
             'title': title,
             'description': description,
             'tags': tags,
-            'categoryId': '10' # Müzik kategorisi
+            'categoryId': '10'
         },
         'status': {
             'privacyStatus': 'public',
@@ -110,18 +103,21 @@ def upload_video(youtube, file_path):
     media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
     request = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media)
     
-    print("YouTube'a yükleme başladı...")
+    print(f"YouTube'a yükleniyor: {title}")
     response = request.execute()
     video_id = response.get('id')
-    print(f"Başarılı! Video yüklendi: https://youtu.be/{video_id}")
+    print(f"Başarılı! ID: {video_id}")
     
-    # Kapak fotoğrafını (s.png) yükle
+    # Kapak fotoğrafını kontrol et ve yükle
     if os.path.exists(THUMBNAIL_IMAGE):
+        print(f"[THUMBNAIL] {THUMBNAIL_IMAGE} bulundu, yükleniyor...")
         try:
             youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(THUMBNAIL_IMAGE)).execute()
-            print("Kapak fotoğrafı güncellendi!")
+            print("[THUMBNAIL] Başarıyla yüklendi.")
         except Exception as e:
-            print(f"Thumbnail hatası (Muhtemelen henüz hazır değil): {e}")
+            print(f"[THUMBNAIL HATA] {e}")
+    else:
+        print("[THUMBNAIL] assets/s.png bulunamadı! YouTube varsayılan resmi kullanacak.")
 
 if __name__ == "__main__":
     try:
@@ -130,6 +126,6 @@ if __name__ == "__main__":
             create_one_hour_loop(INPUT_VIDEO, OUTPUT_VIDEO)
             upload_video(service, OUTPUT_VIDEO)
         else:
-            print(f"HATA: {INPUT_VIDEO} dosyası bulunamadı!")
+            print(f"HATA: {INPUT_VIDEO} dosyası mevcut değil!")
     except Exception as e:
         print(f"SİSTEM HATASI: {str(e)}")
