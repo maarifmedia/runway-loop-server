@@ -11,7 +11,14 @@ from googleapiclient.http import MediaFileUpload
 # --- AYARLAR ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube']
+
+# SCOPES: Yetki hatasını gidermek için en kapsamlı ve standart izin seti
+# Not: 'youtube.force-ssl' ve 'youtube' yetkileri kapak resmi ve playlist işlemleri için şarttır.
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube.force-ssl',
+    'https://www.googleapis.com/auth/youtube'
+]
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
@@ -37,13 +44,24 @@ def get_authenticated_service():
         creds = None
         if os.path.exists(TOKEN_FILE):
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+        
+        # Eğer token geçersizse veya scope'lar uyuşmuyorsa yenilemeyi dene
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
+                try:
+                    creds.refresh(Request())
+                except Exception:
+                    # Refresh fail olursa (invalid_scope hatası burayı tetikler) silip yeniden auth gerekir
+                    print("🔄 Token yenilenemedi, lütfen yerel bilgisayarınızda yeni bir token.json üretin.")
+                    sys.exit(1)
             else:
-                raise Exception("❌ Token geçersiz ve yenilenemiyor. Lütfen bilgisayarınızda yeni bir token.json üretip GitHub Secrets'a yapıştırın.")
+                # Bilgisayarda çalıştırırken burası çalışır
+                flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+            
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
+        
         return build('youtube', 'v3', credentials=creds)
     except Exception as e:
         print(f"🛑 Kimlik Doğrulama Hatası: {e}")
@@ -74,21 +92,29 @@ def upload_video(youtube):
         # Küçük Resim (Thumbnail)
         if os.path.exists(FILES["thumb"]):
             print("🖼️ Küçük resim yükleniyor...")
-            youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(FILES["thumb"])).execute()
-            print("✅ Küçük resim ayarlandı.")
+            try:
+                # Video yüklendikten sonra 5 saniye bekle (YouTube'un videoyu tanıması için)
+                time.sleep(5)
+                youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(FILES["thumb"])).execute()
+                print("✅ Küçük resim ayarlandı.")
+            except Exception as e:
+                print(f"⚠️ Küçük resim yüklenemedi: {e}")
         
         # Oynatma Listesi
         if playlist_id:
-            youtube.playlistItems().insert(
-                part="snippet",
-                body={
-                    "snippet": {
-                        "playlistId": playlist_id,
-                        "resourceId": {"kind": "youtube#video", "videoId": video_id}
+            try:
+                youtube.playlistItems().insert(
+                    part="snippet",
+                    body={
+                        "snippet": {
+                            "playlistId": playlist_id,
+                            "resourceId": {"kind": "youtube#video", "videoId": video_id}
+                        }
                     }
-                }
-            ).execute()
-            print(f"📂 Oynatma listesine eklendi: {playlist_id}")
+                ).execute()
+                print(f"📂 Oynatma listesine eklendi: {playlist_id}")
+            except Exception as e:
+                print(f"⚠️ Oynatma listesine eklenemedi: {e}")
 
         print(f"✨ İşlem başarıyla tamamlandı!")
 
