@@ -1,7 +1,6 @@
 import os
 import datetime
 import time
-import base64
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -16,12 +15,12 @@ except ImportError:
     from moviepy.editor import VideoFileClip, concatenate_videoclips
     HAS_V2 = False
 
-# --- AYARLAR ---
+# --- DİREKTİFLER ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
 
-# Dosya yollarını kesinleştir (Absolute path mantığı)
+# Klasör Yapısı
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
@@ -29,28 +28,33 @@ INPUT_VIDEO = os.path.join(ASSETS_DIR, "current_video.mp4")
 OUTPUT_VIDEO = os.path.join(BASE_DIR, "final_loop_video.mp4")
 THUMBNAIL_IMAGE = os.path.join(ASSETS_DIR, "s.png")
 
-TITLE_FILE = os.path.join(ASSETS_DIR, "title.txt")
-DESC_FILE = os.path.join(ASSETS_DIR, "description.txt")
-TAGS_FILE = os.path.join(ASSETS_DIR, "tags.txt")
+# Metadata Dosyaları
+META_FILES = {
+    "TITLE": os.path.join(ASSETS_DIR, "title.txt"),
+    "DESC": os.path.join(ASSETS_DIR, "description.txt"),
+    "TAGS": os.path.join(ASSETS_DIR, "tags.txt")
+}
 
-def read_metadata(filepath, label):
-    """Dosyayı bulana kadar kısa süre bekler ve okur."""
-    print(f"🔍 {label} aranıyor: {filepath}")
-    
-    # Dosyanın yazılma süresi için 5 saniye tolerans
-    for _ in range(5):
-        if os.path.exists(filepath):
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content:
-                        print(f"✅ [BAŞARILI] {label} içeriği alındı.")
-                        return content
-            except Exception as e:
-                print(f"⚠️ {label} okuma denemesi başarısız: {e}")
-        time.sleep(2)
-    
-    print(f"❌ [BULUNAMADI] {label} dosyası yok veya boş. Varsayılan kullanılacak.")
+def check_and_read_file(filepath, label):
+    """Dosyayı kontrol eder, son değişim tarihini loglar ve okur."""
+    if os.path.exists(filepath):
+        # Dosyanın son değiştirilme zamanını al
+        mtime = os.path.getmtime(filepath)
+        dt_mtime = datetime.datetime.fromtimestamp(mtime)
+        print(f"📂 [DOSYA ANALİZİ] {label} bulundu. Son güncelleme: {dt_mtime}")
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    print(f"📝 [İÇERİK] {label}: {content[:50]}...")
+                    return content
+                else:
+                    print(f"⚠️ [UYARI] {label} dosyası boş!")
+        except Exception as e:
+            print(f"❌ [HATA] {label} okunurken hata: {e}")
+    else:
+        print(f"❓ [YOK] {label} dosyası ({filepath}) bulunamadı!")
     return None
 
 def get_authenticated_service():
@@ -70,7 +74,7 @@ def get_authenticated_service():
     return build('youtube', 'v3', credentials=creds)
 
 def create_one_hour_loop(input_path, output_path, target_minutes=60):
-    print(f"🎬 [İŞLEM] 1 Saatlik render başladı...")
+    print(f"🎬 [İŞLEM] Render başlıyor: {input_path}")
     clip = VideoFileClip(input_path)
     target_seconds = target_minutes * 60
     iterations = int(target_seconds / clip.duration) + 1
@@ -86,18 +90,18 @@ def create_one_hour_loop(input_path, output_path, target_minutes=60):
     final_clip.close()
 
 def upload_video(youtube, file_path):
-    # Dosyaları oku
-    title_val = read_metadata(TITLE_FILE, "BAŞLIK")
-    desc_val = read_metadata(DESC_FILE, "AÇIKLAMA")
-    tags_val = read_metadata(TAGS_FILE, "ETİKETLER")
+    # Verileri dosyadan çek
+    title_raw = check_and_read_file(META_FILES["TITLE"], "BAŞLIK")
+    desc_raw = check_and_read_file(META_FILES["DESC"], "AÇIKLAMA")
+    tags_raw = check_and_read_file(META_FILES["TAGS"], "ETİKETLER")
 
-    # Dinamik veya Varsayılan değerler
-    now_str = datetime.datetime.now().strftime('%B %Y')
-    title = title_val if title_val else f"Deep Focus Ambiance - {now_str}"
-    description = desc_val if desc_val else f"Calm ambiance for study and relax. Created for @TheQuietCorner-yt."
-    tags = [t.strip() for t in tags_val.split(',')] if tags_val else ["ambiance", "relax", "veo3"]
+    # Yedek Plan
+    now = datetime.datetime.now().strftime('%B %Y')
+    title = title_raw if title_raw else f"The Quiet Corner Ambiance - {now}"
+    description = desc_raw if desc_raw else "Calm vibes for study and relaxation. @TheQuietCorner-yt"
+    tags = [t.strip() for t in tags_raw.split(',')] if tags_raw else ["relax", "veo3", "ambiance"]
 
-    print(f"📤 [YOUTUBE] Yükleniyor: {title}")
+    print(f"📤 [YÜKLEME] YouTube'a gönderiliyor: {title}")
 
     body = {
         'snippet': {
@@ -117,16 +121,16 @@ def upload_video(youtube, file_path):
     
     response = request.execute()
     video_id = response.get('id')
-    print(f"🚀 [TAMAMLANDI] Video yüklendi: https://youtu.be/{video_id}")
+    print(f"✅ [BAŞARI] Video ID: {video_id}")
     
-    # Kapak Fotoğrafı
+    # Küçük resim yükleme
     if os.path.exists(THUMBNAIL_IMAGE):
+        print(f"🖼️ [THUMBNAIL] Yükleniyor...")
         try:
-            print(f"🖼️ [RESİM] Kapak fotoğrafı yükleniyor...")
             youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(THUMBNAIL_IMAGE)).execute()
-            print("🎨 [BAŞARI] Kapak fotoğrafı güncellendi.")
+            print("✨ [TAMAM] Küçük resim güncellendi.")
         except Exception as e:
-            print(f"⚠️ [RESİM HATASI] {e}")
+            print(f"❗ [HATA] Resim yüklenemedi: {e}")
 
 if __name__ == "__main__":
     try:
@@ -135,7 +139,7 @@ if __name__ == "__main__":
             create_one_hour_loop(INPUT_VIDEO, OUTPUT_VIDEO)
             upload_video(service, OUTPUT_VIDEO)
         else:
-            print(f"❌ [HATA] Giriş videosu (current_video.mp4) bulunamadı!")
+            print(f"❌ [HATA] {INPUT_VIDEO} dosyası mevcut değil!")
     except Exception as e:
-        print(f"💣 [SİSTEM DURDU] {str(e)}")
+        print(f"💣 [SİSTEM HATASI] {str(e)}")
 
