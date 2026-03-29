@@ -1,6 +1,7 @@
 import os
 import datetime
 import time
+import base64
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -20,31 +21,36 @@ CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
 
-ASSETS_DIR = "assets"
+# Dosya yollarını kesinleştir (Absolute path mantığı)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+
 INPUT_VIDEO = os.path.join(ASSETS_DIR, "current_video.mp4") 
-OUTPUT_VIDEO = "final_loop_video.mp4"
+OUTPUT_VIDEO = os.path.join(BASE_DIR, "final_loop_video.mp4")
 THUMBNAIL_IMAGE = os.path.join(ASSETS_DIR, "s.png")
 
-# SEO Dosyaları
 TITLE_FILE = os.path.join(ASSETS_DIR, "title.txt")
 DESC_FILE = os.path.join(ASSETS_DIR, "description.txt")
 TAGS_FILE = os.path.join(ASSETS_DIR, "tags.txt")
 
 def read_metadata(filepath, label):
-    """Dosyayı okur ve içeriği doğrular."""
-    if os.path.exists(filepath):
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if content:
-                    print(f"✅ [OKUNDU] {label}: {content[:50]}...")
-                    return content
-                else:
-                    print(f"⚠️ [BOŞ] {label} dosyası boş bulundu.")
-        except Exception as e:
-            print(f"❌ [HATA] {label} okunurken teknik hata: {e}")
-    else:
-        print(f"📂 [YOK] {filepath} bulunamadı.")
+    """Dosyayı bulana kadar kısa süre bekler ve okur."""
+    print(f"🔍 {label} aranıyor: {filepath}")
+    
+    # Dosyanın yazılma süresi için 5 saniye tolerans
+    for _ in range(5):
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        print(f"✅ [BAŞARILI] {label} içeriği alındı.")
+                        return content
+            except Exception as e:
+                print(f"⚠️ {label} okuma denemesi başarısız: {e}")
+        time.sleep(2)
+    
+    print(f"❌ [BULUNAMADI] {label} dosyası yok veya boş. Varsayılan kullanılacak.")
     return None
 
 def get_authenticated_service():
@@ -64,14 +70,12 @@ def get_authenticated_service():
     return build('youtube', 'v3', credentials=creds)
 
 def create_one_hour_loop(input_path, output_path, target_minutes=60):
-    print(f"🎬 [İŞLEM] Render başlıyor: {input_path}")
+    print(f"🎬 [İŞLEM] 1 Saatlik render başladı...")
     clip = VideoFileClip(input_path)
     target_seconds = target_minutes * 60
     iterations = int(target_seconds / clip.duration) + 1
     
-    print(f"🔄 [DÖNGÜ] {iterations} tekrar ekleniyor...")
     final_clip = concatenate_videoclips([clip] * iterations)
-    
     if HAS_V2:
         final_clip = final_clip.with_duration(target_seconds)
     else:
@@ -80,18 +84,20 @@ def create_one_hour_loop(input_path, output_path, target_minutes=60):
     final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac", fps=24)
     clip.close()
     final_clip.close()
-    print("✨ [TAMAM] Render bitti.")
 
 def upload_video(youtube, file_path):
-    # Dosyaları doğrula
-    title_text = read_metadata(TITLE_FILE, "BAŞLIK")
-    desc_text = read_metadata(DESC_FILE, "AÇIKLAMA")
-    tags_text = read_metadata(TAGS_FILE, "ETİKETLER")
+    # Dosyaları oku
+    title_val = read_metadata(TITLE_FILE, "BAŞLIK")
+    desc_val = read_metadata(DESC_FILE, "AÇIKLAMA")
+    tags_val = read_metadata(TAGS_FILE, "ETİKETLER")
 
-    # Yedekleme (Backup) Planı
-    title = title_text if title_text else f"The Quiet Corner Ambiance - {datetime.datetime.now().strftime('%B %Y')}"
-    description = desc_text if desc_text else "Sinematik Veo 3 ambiance deneyimi. @TheQuietCorner-yt"
-    tags = [t.strip() for t in tags_text.split(',')] if tags_text else ["relax", "focus", "veo3"]
+    # Dinamik veya Varsayılan değerler
+    now_str = datetime.datetime.now().strftime('%B %Y')
+    title = title_val if title_val else f"Deep Focus Ambiance - {now_str}"
+    description = desc_val if desc_val else f"Calm ambiance for study and relax. Created for @TheQuietCorner-yt."
+    tags = [t.strip() for t in tags_val.split(',')] if tags_val else ["ambiance", "relax", "veo3"]
+
+    print(f"📤 [YOUTUBE] Yükleniyor: {title}")
 
     body = {
         'snippet': {
@@ -106,20 +112,19 @@ def upload_video(youtube, file_path):
         }
     }
 
-    print(f"📤 [YOUTUBE] Yükleniyor: {title}")
     media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
     request = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media)
     
     response = request.execute()
     video_id = response.get('id')
-    print(f"🚀 [YÜKLENDİ] Video ID: {video_id}")
+    print(f"🚀 [TAMAMLANDI] Video yüklendi: https://youtu.be/{video_id}")
     
-    # Küçük resim (s.png) kontrolü
+    # Kapak Fotoğrafı
     if os.path.exists(THUMBNAIL_IMAGE):
         try:
-            print(f"🖼️ [THUMBNAIL] Yükleniyor: {THUMBNAIL_IMAGE}")
+            print(f"🖼️ [RESİM] Kapak fotoğrafı yükleniyor...")
             youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(THUMBNAIL_IMAGE)).execute()
-            print("🎨 [TAMAM] Kapak fotoğrafı güncellendi.")
+            print("🎨 [BAŞARI] Kapak fotoğrafı güncellendi.")
         except Exception as e:
             print(f"⚠️ [RESİM HATASI] {e}")
 
@@ -130,7 +135,7 @@ if __name__ == "__main__":
             create_one_hour_loop(INPUT_VIDEO, OUTPUT_VIDEO)
             upload_video(service, OUTPUT_VIDEO)
         else:
-            print(f"❌ [KRİTİK HATA] Giriş videosu bulunamadı: {INPUT_VIDEO}")
+            print(f"❌ [HATA] Giriş videosu (current_video.mp4) bulunamadı!")
     except Exception as e:
         print(f"💣 [SİSTEM DURDU] {str(e)}")
 
