@@ -8,7 +8,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# MoviePy kütüphanesini farklı içe aktarma yollarını deneyerek yükleyen koruma yapısı
+# MoviePy kütüphanesini içe aktarırken hata kontrolü yapıyoruz
 try:
     from moviepy.editor import VideoFileClip, concatenate_videoclips
 except ImportError:
@@ -19,11 +19,9 @@ except ImportError:
         print("❌ HATA: MoviePy kütüphanesi yüklenemedi. Lütfen requirements.txt dosyasını kontrol edin.")
         sys.exit(1)
 
-# --- KONFİGÜRASYON VE DOSYA YOLLARI ---
+# --- KONFİGÜRASYON ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-
-# YouTube API için gerekli tam yetki kapsamı
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.upload',
     'https://www.googleapis.com/auth/youtube.force-ssl',
@@ -32,9 +30,8 @@ SCOPES = [
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
-TEMP_VIDEO = "final_60min_video.mp4" # Geçici olarak oluşturulacak 1 saatlik video
+TEMP_VIDEO = "final_60min_video.mp4"
 
-# Assets klasöründeki kaynak dosyaların yolları
 FILES = {
     "video": os.path.join(ASSETS_DIR, "current_video.mp4"),
     "title": os.path.join(ASSETS_DIR, "title.txt"),
@@ -45,7 +42,7 @@ FILES = {
 }
 
 def read_asset(file_key):
-    """Belirtilen anahtara göre metin dosyasını okur."""
+    """Assets klasöründeki dosyaları okur."""
     path = FILES[file_key]
     if os.path.exists(path):
         with open(path, 'r', encoding='utf-8') as f:
@@ -53,8 +50,8 @@ def read_asset(file_key):
     return None
 
 def create_1hour_video():
-    """Kısa videoyu alır ve tam 60 dakikalık (1 saat) bir döngü oluşturur."""
-    print("🎬 Video işleniyor (Hedef: 60 Dakika Döngü)...")
+    """Videoyu pürüzsüz bir döngüyle 1 saate tamamlar."""
+    print("🎬 Video döngüye sokuluyor (Pürüzsüz Geçiş Modu)...")
     if not os.path.exists(FILES["video"]):
         print(f"❌ HATA: Kaynak video bulunamadı: {FILES['video']}")
         return False
@@ -63,36 +60,41 @@ def create_1hour_video():
         clip = VideoFileClip(FILES["video"])
         duration = clip.duration
         
-        # 3600 saniye (1 saat) için gereken tekrar sayısı hesaplanır
-        loops_needed = int(3600 / duration) + 1
-        print(f"🔄 Kaynak klip {duration:.2f}s sürüyor. {loops_needed} kez uç uca eklenecek.")
+        # Döngü geçişi için 0.5 saniyelik bir yumuşatma (crossfade) süresi
+        crossfade_time = 0.5 if duration > 2 else 0.1
         
-        # Klipler birleştirilir
-        final_clip = concatenate_videoclips([clip] * loops_needed)
-        final_clip = final_clip.subclip(0, 3600) # Tam 1 saatte kesilir
+        # 3600 saniye (1 saat) için gereken döngü sayısını hesapla
+        loops_needed = int(3600 / (duration - crossfade_time)) + 1
+        print(f"🔄 Klip {duration:.2f}s sürüyor. {loops_needed} tekrar ve {crossfade_time}s geçişle birleştiriliyor.")
         
-        # GitHub Actions kaynaklarını optimize kullanmak için render ayarları
-        print("⏳ Render işlemi başladı. Bu işlem GitHub üzerinde 15-30 dk sürebilir...")
+        # Klipleri birbirinin üzerine bindirerek (padding) pürüzsüzce birleştir
+        clips = [clip] * loops_needed
+        final_clip = concatenate_videoclips(clips, method="compose", padding=-crossfade_time)
+        
+        # Tam 1 saatte kes
+        final_clip = final_clip.subclip(0, 3600)
+        
+        print("⏳ Render işlemi başladı (Bu işlem GitHub üzerinde 20-30 dk sürebilir)...")
         final_clip.write_videofile(
             TEMP_VIDEO, 
             codec="libx264", 
             audio_codec="aac", 
             fps=24, 
-            bitrate="5000k", # 1080p için kaliteli ve optimize boyut
+            bitrate="5000k",
             threads=4,
             logger=None
         )
         
         clip.close()
         final_clip.close()
-        print("✅ 1 saatlik video başarıyla oluşturuldu.")
+        print("✅ 1 saatlik pürüzsüz video hazır.")
         return True
     except Exception as e:
-        print(f"❌ Video işleme (MoviePy) hatası: {e}")
+        print(f"❌ Video işleme hatası: {e}")
         return False
 
 def get_authenticated_service():
-    """YouTube API servisine kimlik doğrulaması yaparak bağlanır."""
+    """YouTube API bağlantısını kurar."""
     try:
         creds = None
         if os.path.exists(TOKEN_FILE):
@@ -102,48 +104,33 @@ def get_authenticated_service():
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                raise Exception("Kritik: Geçersiz Token! Lütfen GitHub Secrets verilerini yenileyin.")
-            
+                raise Exception("Kritik: Token geçersiz! Lütfen yeni token üretin.")
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
-        
         return build('youtube', 'v3', credentials=creds)
     except Exception as e:
         print(f"🛑 Kimlik Doğrulama Hatası: {e}")
         sys.exit(1)
 
 def upload_video(youtube):
-    """Hazırlanan 1 saatlik videoyu tüm metadata bilgileriyle YouTube'a yükler."""
+    """Metadata ve Kapak Resmi ile birlikte yükleme yapar."""
     try:
-        title = read_asset("title") or f"Cozy Ambience - {datetime.datetime.now().year}"
-        description = read_asset("desc") or "Subscribe to @TheQuietCorner-yt for more cinematic relaxation."
-        tags = read_asset("tags").split(',') if read_asset("tags") else ["ambience", "relaxing"]
+        title = read_asset("title") or "Cinematic Ambience (1 HOUR)"
+        description = read_asset("desc") or "Subscribe to @TheQuietCorner-yt."
+        tags = read_asset("tags").split(',') if read_asset("tags") else ["ambience"]
         playlist_id = read_asset("playlist")
 
-        print(f"🚀 Video Yükleniyor: {title}")
+        print(f"🚀 Yükleniyor: {title}")
 
         body = {
-            'snippet': {
-                'title': title,
-                'description': description,
-                'tags': tags,
-                'categoryId': '10' # Müzik kategorisi
-            },
-            'status': {
-                'privacyStatus': 'public',
-                'selfDeclaredMadeForKids': False
-            }
+            'snippet': {'title': title, 'description': description, 'tags': tags, 'categoryId': '10'},
+            'status': {'privacyStatus': 'public', 'selfDeclaredMadeForKids': False}
         }
 
-        # Büyük dosyalar için 'resumable' yükleme modu kullanılır
         media = MediaFileUpload(TEMP_VIDEO, chunksize=1024*1024, resumable=True)
-        request = youtube.videos().insert(
-            part=','.join(body.keys()),
-            body=body,
-            media_body=media
-        )
+        request = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media)
         
-        print("📤 YouTube sunucularına veri aktarımı başladı...")
+        print("📤 YouTube sunucusuna gönderiliyor...")
         response = None
         while response is None:
             status, response = request.next_chunk()
@@ -151,54 +138,34 @@ def upload_video(youtube):
                 print(f"📊 İlerleme: %{int(status.progress() * 100)}")
 
         video_id = response.get('id')
-        print(f"✅ Video başarıyla yüklendi! Video ID: {video_id}")
+        print(f"✅ Başarıyla yüklendi! Video ID: {video_id}")
 
-        # --- KAPAK RESMİ (THUMBNAIL) ---
+        # Kapak Resmi (Thumbnail)
         if os.path.exists(FILES["thumb"]):
-            print("🖼️ Kapak resmi yükleniyor...")
-            time.sleep(10) # YouTube'un videoyu tanıması için kısa bir bekleme
+            print("🖼️ Kapak resmi ayarlanıyor...")
+            time.sleep(10)
             try:
-                youtube.thumbnails().set(
-                    videoId=video_id,
-                    media_body=MediaFileUpload(FILES["thumb"])
-                ).execute()
-                print("✅ Kapak resmi başarıyla ayarlandı.")
-            except Exception as e:
-                print(f"⚠️ Kapak resmi hatası: {e}")
+                youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(FILES["thumb"])).execute()
+                print("✅ Kapak resmi eklendi.")
+            except Exception as e: print(f"⚠️ Kapak hatası: {e}")
         
-        # --- OYNATMA LİSTESİNE EKLEME ---
+        # Oynatma Listesi
         if playlist_id:
-            print(f"📂 Oynatma listesine ekleniyor: {playlist_id}")
             try:
-                youtube.playlistItems().insert(
-                    part="snippet",
-                    body={
-                        "snippet": {
-                            "playlistId": playlist_id,
-                            "resourceId": {"kind": "youtube#video", "videoId": video_id}
-                        }
-                    }
-                ).execute()
+                youtube.playlistItems().insert(part="snippet", body={
+                    "snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": video_id}}
+                }).execute()
                 print("✅ Oynatma listesine eklendi.")
-            except Exception as e:
-                print(f"⚠️ Oynatma listesi hatası: {e}")
+            except Exception as e: print(f"⚠️ Liste hatası: {e}")
 
     except Exception as e:
         print(f"💥 Kritik Yükleme Hatası: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    # 1. Döngü videosunu oluştur
     if create_1hour_video():
-        # 2. Servise bağlan
         service = get_authenticated_service()
-        # 3. Yüklemeyi gerçekleştir
         upload_video(service)
-        
-        # 4. Temizlik: Devasa geçici dosyayı silerek GitHub disk alanını boşalt
         if os.path.exists(TEMP_VIDEO):
             os.remove(TEMP_VIDEO)
-            print(f"🗑️ Geçici dosya ({TEMP_VIDEO}) silindi.")
-    else:
-        print("❌ Video döngüsü oluşturulamadığı için işlem durduruldu.")
-        sys.exit(1)
+            print("🗑️ Geçici dosya silindi.")
