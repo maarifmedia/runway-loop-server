@@ -1,4 +1,6 @@
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
-moviepy
+moviepy==1.0.3
+decorator==4.4.2
+proglog
