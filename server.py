@@ -12,8 +12,7 @@ from googleapiclient.http import MediaFileUpload
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
 
-# SCOPES: Yetki hatasını gidermek için en kapsamlı ve standart izin seti
-# Not: 'youtube.force-ssl' ve 'youtube' yetkileri kapak resmi ve playlist işlemleri için şarttır.
+# Bilgisayarında ürettiğin token ile %100 eşleşmesi gereken yetki listesi
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.upload',
     'https://www.googleapis.com/auth/youtube.force-ssl',
@@ -45,19 +44,11 @@ def get_authenticated_service():
         if os.path.exists(TOKEN_FILE):
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
         
-        # Eğer token geçersizse veya scope'lar uyuşmuyorsa yenilemeyi dene
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception:
-                    # Refresh fail olursa (invalid_scope hatası burayı tetikler) silip yeniden auth gerekir
-                    print("🔄 Token yenilenemedi, lütfen yerel bilgisayarınızda yeni bir token.json üretin.")
-                    sys.exit(1)
+                creds.refresh(Request())
             else:
-                # Bilgisayarda çalıştırırken burası çalışır
-                flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
+                raise Exception("Token geçersiz. Lütfen bilgisayarınızda yeni token üretip GitHub Secrets'a ekleyin.")
             
             with open(TOKEN_FILE, 'w') as token:
                 token.write(creds.to_json())
@@ -74,7 +65,7 @@ def upload_video(youtube):
         tags = read_asset("tags").split(',') if read_asset("tags") else ["ambiance", "relax"]
         playlist_id = read_asset("playlist")
 
-        print(f"🚀 Hazırlanıyor: {title}")
+        print(f"🚀 Video Hazırlanıyor: {title}")
 
         body = {
             'snippet': {'title': title, 'description': description, 'tags': tags, 'categoryId': '10'},
@@ -87,21 +78,21 @@ def upload_video(youtube):
         print("📤 Video yükleme başladı...")
         response = request.execute()
         video_id = response.get('id')
-        print(f"✅ Video yüklendi! ID: {video_id}")
+        print(f"✅ Video başarıyla yüklendi! ID: {video_id}")
 
-        # Küçük Resim (Thumbnail)
+        # --- KÜÇÜK RESİM (THUMBNAIL) GÜNCELLEME ---
         if os.path.exists(FILES["thumb"]):
-            print("🖼️ Küçük resim yükleniyor...")
+            print("🖼️ Kapak resmi yükleniyor...")
+            time.sleep(5) # YouTube'un videoyu işlemesi için kısa bir bekleme
             try:
-                # Video yüklendikten sonra 5 saniye bekle (YouTube'un videoyu tanıması için)
-                time.sleep(5)
                 youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(FILES["thumb"])).execute()
-                print("✅ Küçük resim ayarlandı.")
+                print("✅ Kapak resmi başarıyla ayarlandı.")
             except Exception as e:
-                print(f"⚠️ Küçük resim yüklenemedi: {e}")
+                print(f"⚠️ Kapak resmi hatası (Önemli değil, video yüklendi): {e}")
         
-        # Oynatma Listesi
+        # --- OYNATMA LİSTESİNE EKLEME ---
         if playlist_id:
+            print(f"📂 Oynatma listesine ekleniyor: {playlist_id}")
             try:
                 youtube.playlistItems().insert(
                     part="snippet",
@@ -112,14 +103,14 @@ def upload_video(youtube):
                         }
                     }
                 ).execute()
-                print(f"📂 Oynatma listesine eklendi: {playlist_id}")
+                print("✅ Oynatma listesine başarıyla eklendi.")
             except Exception as e:
-                print(f"⚠️ Oynatma listesine eklenemedi: {e}")
+                print(f"⚠️ Liste hatası: {e}")
 
-        print(f"✨ İşlem başarıyla tamamlandı!")
+        print(f"✨ Tüm işlemler tamamlandı!")
 
     except Exception as e:
-        print(f"💥 Yükleme Sırasında Hata Oluştu: {e}")
+        print(f"💥 Kritik Yükleme Hatası: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
