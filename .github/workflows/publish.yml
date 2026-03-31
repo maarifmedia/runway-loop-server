@@ -9,7 +9,6 @@ on:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -27,10 +26,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Kimlik Bilgilerini Hazırla (Secrets'tan Dosya Oluştur)
+    - name: Kimlik Bilgilerini Hazırla (Base64'ten Çözme)
       run: |
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
-        echo '${{ secrets.TOKEN_JSON }}' > token.json
+        echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
 
     - name: Videoyu İşle ve YouTube'a Yükle
       run: python server.py
