@@ -12,7 +12,7 @@ SHORTS_VIDEO = "assets/shorts_video.mp4"
 THUMBNAIL = "assets/s.png"
 CLIENT_SECRETS_FILE = "client_secrets.json"
 # GitHub .yml dosyasının oluşturduğu isimle eşleşmeli
-TOKEN_FILE = "token.json" 
+TOKEN_FILE = "token.pickle" 
 
 def get_authenticated_service():
     credentials = None
