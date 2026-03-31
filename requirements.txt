@@ -2,5 +2,6 @@ google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
 moviepy==1.0.3
+Pillow==10.1.0
 decorator==4.4.2
 proglog
