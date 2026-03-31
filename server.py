@@ -51,22 +51,30 @@ def upload_video(youtube, file_path, title, description, tags, is_shorts=False, 
         
         v_id = response.get("id")
         
-        # 🖼️ KÜÇÜK RESİM (Resumable Düzeltmesi)
+        # 🖼️ KÜÇÜK RESİM (Hata olsa bile devam etmesi için try içinde)
         if not is_shorts and os.path.exists(THUMBNAIL):
-            thumb_media = MediaFileUpload(THUMBNAIL, mimetype='image/png', resumable=True)
-            youtube.thumbnails().set(videoId=v_id, media_body=thumb_media).execute()
-            print("🖼️ Küçük resim başarıyla eklendi.")
+            try:
+                # 2MB sınırını aşmak için resumable=True kullanıyoruz
+                thumb_media = MediaFileUpload(THUMBNAIL, mimetype='image/png', resumable=True)
+                youtube.thumbnails().set(videoId=v_id, media_body=thumb_media).execute()
+                print("🖼️ Küçük resim başarıyla eklendi.")
+            except Exception as e:
+                print(f"⚠️ Küçük resim yüklenemedi: {e}")
 
+        # 📂 OYNATMA LİSTESİ
         if playlist_id and not is_shorts:
-            youtube.playlistItems().insert(
-                part="snippet",
-                body={"snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": v_id}}}
-            ).execute()
-            print(f"📂 Oynatma listesine eklendi.")
+            try:
+                youtube.playlistItems().insert(
+                    part="snippet",
+                    body={"snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": v_id}}}
+                ).execute()
+                print(f"📂 Oynatma listesine eklendi.")
+            except Exception as e:
+                print(f"⚠️ Oynatma listesi hatası: {e}")
             
         return v_id
     except Exception as e:
-        print(f"❌ Hata: {e}")
+        print(f"❌ Kritik Yükleme Hatası: {e}")
         return None
 
 if __name__ == "__main__":
@@ -76,8 +84,10 @@ if __name__ == "__main__":
     tags = read_asset(TAGS_FILE, "relax,ambiance,1hour")
     p_id = read_asset(PLAYLIST_FILE, None)
 
+    # 1. Ana Videoyu Yükle
     main_id = upload_video(service, TEMP_VIDEO, title, desc, tags, playlist_id=p_id)
     
+    # 2. Shorts'u Yükle (Ana video yüklendiyse)
     if main_id and os.path.exists(SHORTS_VIDEO):
         m_url = f"https://www.youtube.com/watch?v={main_id}"
-        upload_video(service, SHORTS_VIDEO, title[:50] + " #shorts", f"Full: {m_url}", "shorts,relax", is_shorts=True)
+        upload_video(service, SHORTS_VIDEO, title[:50] + " #shorts", f"Full version: {m_url}", "shorts,relax", is_shorts=True)
