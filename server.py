@@ -10,13 +10,10 @@ TEMP_VIDEO = f"{ASSETS_DIR}current_video.mp4"
 SHORTS_VIDEO = f"{ASSETS_DIR}shorts_video.mp4"
 THUMBNAIL = f"{ASSETS_DIR}s.png"
 PLAYLIST_FILE = f"{ASSETS_DIR}playlist.txt"
-# SEO Dosyaları
 TITLE_FILE = f"{ASSETS_DIR}title.txt"
 DESC_FILE = f"{ASSETS_DIR}description.txt"
 TAGS_FILE = f"{ASSETS_DIR}tags.txt"
-
 TOKEN_FILE = "token.pickle"
-CLIENT_SECRETS_FILE = "client_secrets.json"
 
 def get_authenticated_service():
     credentials = None
@@ -28,34 +25,25 @@ def get_authenticated_service():
             credentials.refresh(Request())
     return build('youtube', 'v3', credentials=credentials)
 
-def read_asset_file(file_path, default_text):
-    """SEO dosyalarını okur, dosya yoksa varsayılan metni döner."""
+def read_asset(file_path, default):
     if os.path.exists(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-            return content if content else default_text
-    return default_text
+            return f.read().strip() or default
+    return default
 
 def upload_video(youtube, file_path, title, description, tags, is_shorts=False, playlist_id=None):
     if not os.path.exists(file_path): return None
     try:
         print(f"📤 {title} yükleniyor...")
         media = MediaFileUpload(file_path, mimetype='video/mp4', chunksize=5*1024*1024, resumable=True)
-        
         request = youtube.videos().insert(
             part="snippet,status",
             body={
-                "snippet": {
-                    "title": title,
-                    "description": description,
-                    "tags": tags.split(','),
-                    "categoryId": "10"
-                },
+                "snippet": {"title": title, "description": description, "tags": tags.split(','), "categoryId": "10"},
                 "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}
             },
             media_body=media
         )
-        
         response = None
         while response is None:
             status, response = request.next_chunk()
@@ -63,13 +51,12 @@ def upload_video(youtube, file_path, title, description, tags, is_shorts=False, 
         
         v_id = response.get("id")
         
-        # Thumbnail Yükleme (Resumable)
+        # 🖼️ KÜÇÜK RESİM (Resumable Düzeltmesi)
         if not is_shorts and os.path.exists(THUMBNAIL):
             thumb_media = MediaFileUpload(THUMBNAIL, mimetype='image/png', resumable=True)
             youtube.thumbnails().set(videoId=v_id, media_body=thumb_media).execute()
-            print("🖼️ Küçük resim eklendi.")
+            print("🖼️ Küçük resim başarıyla eklendi.")
 
-        # Oynatma Listesine Ekle
         if playlist_id and not is_shorts:
             youtube.playlistItems().insert(
                 part="snippet",
@@ -84,20 +71,13 @@ def upload_video(youtube, file_path, title, description, tags, is_shorts=False, 
 
 if __name__ == "__main__":
     service = get_authenticated_service()
-    
-    # 📝 SEO Verilerini Oku
-    video_title = read_asset_file(TITLE_FILE, "Aesthetic Relaxing Music (1 HOUR)")
-    video_desc = read_asset_file(DESC_FILE, "Enjoy this relaxing loop.")
-    video_tags = read_asset_file(TAGS_FILE, "relaxing,ambiance,1hour")
-    
-    # 📂 Playlist ID Oku
-    target_playlist = read_asset_file(PLAYLIST_FILE, None)
+    title = read_asset(TITLE_FILE, "Aesthetic Relaxing Music (1 HOUR)")
+    desc = read_asset(DESC_FILE, "Relaxing ambiance loop.")
+    tags = read_asset(TAGS_FILE, "relax,ambiance,1hour")
+    p_id = read_asset(PLAYLIST_FILE, None)
 
-    # 1. ANA VİDEO YÜKLE
-    main_id = upload_video(service, TEMP_VIDEO, video_title, video_desc, video_tags, playlist_id=target_playlist)
+    main_id = upload_video(service, TEMP_VIDEO, title, desc, tags, playlist_id=p_id)
     
-    # 2. SHORTS YÜKLE
     if main_id and os.path.exists(SHORTS_VIDEO):
         m_url = f"https://www.youtube.com/watch?v={main_id}"
-        s_title = video_title[:60] + " #shorts" # Shorts için başlığı kırp
-        upload_video(service, SHORTS_VIDEO, s_title, f"Full version: {m_url}", "shorts,relax", is_shorts=True)
+        upload_video(service, SHORTS_VIDEO, title[:50] + " #shorts", f"Full: {m_url}", "shorts,relax", is_shorts=True)
