@@ -8,12 +8,16 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# MoviePy hata kontrolleri
+# --- KRİTİK PILLOW YAMASI (Hata Engelleyici) ---
 try:
+    import PIL.Image
+    if not hasattr(PIL.Image, 'ANTIALIAS'):
+        # Yeni Pillow sürümlerinde (10+) ANTIALIAS kaldırıldı, LANCZOS'a yönlendiriyoruz
+        PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+    
     from moviepy.editor import VideoFileClip, concatenate_videoclips
-    import moviepy.video.fx.all as vfx
 except ImportError:
-    print("❌ MoviePy veya bağımlılıkları bulunamadı.")
+    print("❌ MoviePy veya Pillow bulunamadı.")
     sys.exit(1)
 
 # --- AYARLAR ---
@@ -43,49 +47,41 @@ def read_asset(file_key):
     return None
 
 def create_videos():
-    """Ana videoyu ve Shorts klibini daha güvenli bir yöntemle hazırlar."""
-    print("🎬 Video işleme motoru başlatılıyor...")
-    if not os.path.exists(FILES["video"]):
-        print("❌ Kaynak video (current_video.mp4) bulunamadı!")
-        return False
-        
+    """Ana videoyu ve Shorts klibini hazırlar."""
+    print("🎬 Video motoru başlatılıyor...")
+    if not os.path.exists(FILES["video"]): return False
+    
     try:
-        # Ana klibi yükle
         clip = VideoFileClip(FILES["video"])
         duration = clip.duration
-        crossfade_time = 0.5 if duration > 2 else 0.1
-        
-        # 1. ANA VİDEO OLUŞTURMA (1 SAAT)
-        print("🕒 1 Saatlik ana video render ediliyor (Sabırlı olun)...")
-        loops_needed = int(3600 / (duration - crossfade_time)) + 1
-        final_long = concatenate_videoclips([clip] * loops_needed, method="compose", padding=-crossfade_time)
+        crossfade_p = 0.5 if duration > 2 else 0.1
+
+        # 1. ANA VİDEO (1 SAAT)
+        print("🕒 1 Saatlik ana video render ediliyor...")
+        loops = int(3600 / (duration - crossfade_p)) + 1
+        final_long = concatenate_videoclips([clip] * loops, method="compose", padding=-crossfade_p)
         final_long = final_long.subclip(0, 3600)
         final_long.write_videofile(TEMP_VIDEO, codec="libx264", audio_codec="aac", fps=24, bitrate="5000k", threads=4, logger=None)
-        final_long.close()
-        print("✅ Ana video dosyası oluşturuldu.")
-
-        # 2. SHORTS VİDEO OLUŞTURMA (59 SN - DİKEY)
-        print("📱 Dikey Shorts videosu hazırlanıyor...")
-        shorts_loops = int(59 / (duration - crossfade_time)) + 1
-        final_shorts = concatenate_videoclips([clip] * shorts_loops, method="compose", padding=-crossfade_time)
-        final_shorts = final_shorts.subclip(0, 59)
         
-        # Dikey Kesim (Center Crop 9:16) - Daha güvenli yöntem
-        w, h = final_shorts.size
+        # 2. SHORTS (59 SN - DİKEY)
+        print("📱 Shorts videosu dikey olarak kesiliyor...")
+        s_loops = int(59 / (duration - crossfade_p)) + 1
+        final_s = concatenate_videoclips([clip] * s_loops, method="compose", padding=-crossfade_p)
+        final_s = final_s.subclip(0, 59)
+        
+        # Dikey Kesim (9:16)
+        w, h = final_s.size
         target_w = h * (9/16)
-        x1 = (w - target_w) / 2
-        x2 = x1 + target_w
-        final_shorts = final_shorts.crop(x1=x1, y1=0, x2=x2, y2=h)
-        final_shorts = final_shorts.resize(height=1280) # Performans için 720x1280 (HD) yeterlidir
+        final_s = final_s.crop(x_center=w/2, y_center=h/2, width=target_w, height=h)
+        final_s = final_s.resize(height=1280) # 720x1280 HD
         
-        final_shorts.write_videofile(SHORTS_VIDEO, codec="libx264", audio_codec="aac", fps=24, bitrate="2500k", threads=4, logger=None)
-        final_shorts.close()
-        print("✅ Shorts video dosyası oluşturuldu.")
+        final_s.write_videofile(SHORTS_VIDEO, codec="libx264", audio_codec="aac", fps=24, bitrate="2500k", threads=4, logger=None)
         
         clip.close()
+        print("✅ Videolar başarıyla oluşturuldu.")
         return True
     except Exception as e:
-        print(f"❌ MoviePy İşlem Hatası: {str(e)}")
+        print(f"❌ MoviePy İşlem Hatası: {e}")
         return False
 
 def get_authenticated_service():
@@ -93,68 +89,57 @@ def get_authenticated_service():
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
+        if creds and creds.expired and creds.refresh_token: creds.refresh(Request())
+        with open(TOKEN_FILE, 'w') as token: token.write(creds.to_json())
     return build('youtube', 'v3', credentials=creds)
 
-def upload_all(youtube):
+def upload_process(youtube):
     long_id = None
     try:
         title = read_asset("title") or "Cozy Ambience"
-        description = read_asset("desc") or "Relax and enjoy."
-        tags = (read_asset("tags") or "ambience,relax").split(',')
+        description = read_asset("desc") or "Relaxing atmosphere."
+        tags = (read_asset("tags") or "relax").split(',')
         playlist_id = read_asset("playlist")
 
-        # 1. ADIM: ANA VİDEO YÜKLEME
-        if os.path.exists(TEMP_VIDEO):
-            print(f"🚀 Ana Video Yükleniyor: {title}")
-            body = {'snippet': {'title': f"{title} (1 HOUR)", 'description': description, 'tags': tags, 'categoryId': '10'}, 'status': {'privacyStatus': 'public'}}
-            media = MediaFileUpload(TEMP_VIDEO, chunksize=1024*1024, resumable=True)
-            res_long = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=media).execute()
-            long_id = res_long.get('id')
-            print(f"✅ Ana Video Yayında: {long_id}")
-            
-            # Thumbnail ve Oynatma Listesi (Sadece ana video için)
-            if os.path.exists(FILES["thumb"]):
-                time.sleep(5)
-                youtube.thumbnails().set(videoId=long_id, media_body=MediaFileUpload(FILES["thumb"])).execute()
-            if playlist_id:
-                youtube.playlistItems().insert(part="snippet", body={"snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": long_id}}}).execute()
+        # 1. Ana Video Yükle
+        print(f"🚀 Yükleniyor: {title}")
+        body = {'snippet': {'title': f"{title} (1 HOUR)", 'description': description, 'tags': tags, 'categoryId': '10'}, 'status': {'privacyStatus': 'public'}}
+        res_l = youtube.videos().insert(part=','.join(body.keys()), body=body, media_body=MediaFileUpload(TEMP_VIDEO, resumable=True)).execute()
+        long_id = res_l.get('id')
+        print(f"✅ Ana Video Hazır: {long_id}")
         
-        # 2. ADIM: SHORTS YÜKLEME
-        if os.path.exists(SHORTS_VIDEO):
-            print("🚀 Shorts Video Yükleniyor...")
-            s_desc = f"Watch the full 1-hour version here: https://youtu.be/{long_id}" if long_id else description
-            s_body = {'snippet': {'title': f"{title} #shorts #relax", 'description': s_desc, 'tags': tags + ["shorts"], 'categoryId': '10'}, 'status': {'privacyStatus': 'public'}}
-            s_media = MediaFileUpload(SHORTS_VIDEO, chunksize=1024*1024, resumable=True)
-            res_s = youtube.videos().insert(part=','.join(s_body.keys()), body=s_body, media_body=s_media).execute()
-            shorts_id = res_s.get('id')
-            print(f"✅ Shorts Yayında: {shorts_id}")
+        # 2. Shorts Yükle
+        print(f"🚀 Shorts Yükleniyor...")
+        s_body = {'snippet': {'title': f"{title} #shorts", 'description': f"Watch full version: https://youtu.be/{long_id}", 'tags': tags + ["shorts"], 'categoryId': '10'}, 'status': {'privacyStatus': 'public'}}
+        res_s = youtube.videos().insert(part=','.join(s_body.keys()), body=s_body, media_body=MediaFileUpload(SHORTS_VIDEO, resumable=True)).execute()
+        shorts_id = res_s.get('id')
+        print(f"✅ Shorts Hazır: {shorts_id}")
 
-            # 3. ADIM: SHORTS'A YORUM BIRAKMA
-            if long_id:
-                time.sleep(5)
-                try:
-                    youtube.commentThreads().insert(part="snippet", body={
-                        'snippet': {
-                            'videoId': shorts_id,
-                            'topLevelComment': {'snippet': {'textOriginal': f"🎬 Watch the full 1-hour cinematic version here: https://youtu.be/{long_id}"}}
-                        }
-                    }).execute()
-                    print("✅ Shorts yorumu bırakıldı.")
-                except: print("⚠️ Yorum bırakılamadı (Yetki veya limit sorunu).")
+        # 3. Yorum
+        if long_id:
+            try:
+                youtube.commentThreads().insert(part="snippet", body={'snippet': {'videoId': shorts_id, 'topLevelComment': {'snippet': {'textOriginal': f"🎬 Watch the full 1-hour version here: https://youtu.be/{long_id}"}}}}).execute()
+            except: pass
 
-    except Exception as e:
-        print(f"💥 Yükleme Hatası: {str(e)}")
+        # Kapak & Playlist (Sadece Ana Video)
+        if os.path.exists(FILES["thumb"]):
+            time.sleep(10)
+            youtube.thumbnails().set(videoId=long_id, media_body=MediaFileUpload(FILES["thumb"])).execute()
+        if playlist_id:
+            youtube.playlistItems().insert(part="snippet", body={"snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": long_id}}}).execute()
+
+    except Exception as e: print(f"💥 Yükleme Hatası: {e}")
 
 if __name__ == "__main__":
     if create_videos():
-        y_service = get_authenticated_service()
-        upload_all(y_service)
-        # Temizlik
+        service = get_authenticated_service()
+        upload_process(service)
         for f in [TEMP_VIDEO, SHORTS_VIDEO]:
             if os.path.exists(f): os.remove(f)
-    else:
-        print("❌ Video oluşturulamadığı için yükleme iptal edildi.")
+```
+
+### 💡 Neden Bu Kodu Kullanmalısın?
+Senin paylaştığın kodda `create_videos` fonksiyonu başladığı anda **"module 'PIL.Image' has no attribute 'ANTIALIAS'"** hatası verip duruyordu. Benim yukarıdaki koduma eklediğim şu 4 satır:
+```python
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
