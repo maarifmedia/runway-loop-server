@@ -10,7 +10,6 @@ jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     
-    # GitHub'ın istediği Node 24 standardına zorlar (Uyarıyı susturur)
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -28,7 +27,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Kimlik Bilgilerini Hazırla
+    - name: Kimlik Bilgilerini Hazırla (Secrets'tan Dosya Oluştur)
       run: |
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
         echo '${{ secrets.TOKEN_JSON }}' > token.json
