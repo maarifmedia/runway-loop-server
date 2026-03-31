@@ -1,35 +1,10 @@
-name: YouTube Otomasyonu - Veo 3 İşleyici
-
-on:
-  push:
-    paths:
-      - 'assets/current_video.mp4'
-  workflow_dispatch:
-
-jobs:
-  build-and-upload:
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-    steps:
-    - name: Depoyu Kontrol Et
-      uses: actions/checkout@v4
-
-    - name: Python Kurulumu
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Bağımlılıkları Kur
+- name: Videoyu 1 Saate Uzat ve Shorts Kes (FFmpeg)
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Kimlik Bilgilerini Hazırla (Base64'ten Çözme)
-      run: |
-        echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
-        echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
+        # 1. Ana Videoyu 1 Saat Yap (Loop)
+        ffmpeg -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/main_1hour.mp4
+        
+        # 2. Shorts Oluştur (Ortadan 9:16 Kes ve 59sn al)
+        ffmpeg -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
 
     - name: Videoyu İşle ve YouTube'a Yükle
       run: python server.py
