@@ -135,4 +135,5 @@ if __name__ == "__main__":
         service = get_authenticated_service()
         upload_process(service)
         for f in [TEMP_VIDEO, SHORTS_VIDEO]:
-            if os.path.exists(f): os.remove(f)
+            if os.path.exists(f):
+                os.remove(f)
