@@ -1,10 +1,46 @@
-- name: Videoyu 1 Saate Uzat ve Shorts Kes (FFmpeg)
+name: YouTube Otomasyonu - Veo 3 İşleyici
+
+on:
+  push:
+    paths:
+      - 'assets/current_video.mp4'
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Depoyu Kontrol Et
+      uses: actions/checkout@v4
+
+    - name: Python Kurulumu
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    # FFmpeg Kurulumu (Video işleme için şart)
+    - name: Install FFmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+    - name: Bağımlılıkları Kur
       run: |
-        # 1. Ana Videoyu 1 Saat Yap (Loop)
-        ffmpeg -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/main_1hour.mp4
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Kimlik Bilgilerini Hazırla
+      run: |
+        echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
+        echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
+
+    # KRİTİK ADIM: Videoyu 1 Saate Uzat ve Shorts Kes
+    - name: Video Isleme (Loop ve Shorts)
+      run: |
+        # Mevcut 9 saniyelik videoyu 1 saatlik yap (Ismi değişmez, üzerine yazar)
+        ffmpeg -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
+        mv assets/final_main.mp4 assets/current_video.mp4
         
-        # 2. Shorts Oluştur (Ortadan 9:16 Kes ve 59sn al)
+        # Mevcut videodan 9:16 dikey Shorts kes (Ortadan crop yapar)
         ffmpeg -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
 
-    - name: Videoyu İşle ve YouTube'a Yükle
+    - name: Videoyu YouTube'a Yukle
       run: python server.py
