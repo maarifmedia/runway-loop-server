@@ -23,7 +23,7 @@ except ImportError:
 # --- AYARLAR ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
 TOKEN_FILE = "token.json"
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.force-ssl', 'https://www.googleapis.com/auth/youtube']
+SCOPES = ['[https://www.googleapis.com/auth/youtube.upload](https://www.googleapis.com/auth/youtube.upload)', '[https://www.googleapis.com/auth/youtube.force-ssl](https://www.googleapis.com/auth/youtube.force-ssl)', '[https://www.googleapis.com/auth/youtube](https://www.googleapis.com/auth/youtube)']
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
@@ -110,7 +110,7 @@ def upload_process(youtube):
         
         # 2. Shorts Yükle
         print(f"🚀 Shorts Yükleniyor...")
-        s_body = {'snippet': {'title': f"{title} #shorts", 'description': f"Watch full version: https://youtu.be/{long_id}", 'tags': tags + ["shorts"], 'categoryId': '10'}, 'status': {'privacyStatus': 'public'}}
+        s_body = {'snippet': {'title': f"{title} #shorts", 'description': f"Watch full version: [https://youtu.be/](https://youtu.be/){long_id}", 'tags': tags + ["shorts"], 'categoryId': '10'}, 'status': {'privacyStatus': 'public'}}
         res_s = youtube.videos().insert(part=','.join(s_body.keys()), body=s_body, media_body=MediaFileUpload(SHORTS_VIDEO, resumable=True)).execute()
         shorts_id = res_s.get('id')
         print(f"✅ Shorts Hazır: {shorts_id}")
@@ -118,7 +118,7 @@ def upload_process(youtube):
         # 3. Yorum
         if long_id:
             try:
-                youtube.commentThreads().insert(part="snippet", body={'snippet': {'videoId': shorts_id, 'topLevelComment': {'snippet': {'textOriginal': f"🎬 Watch the full 1-hour version here: https://youtu.be/{long_id}"}}}}).execute()
+                youtube.commentThreads().insert(part="snippet", body={'snippet': {'videoId': shorts_id, 'topLevelComment': {'snippet': {'textOriginal': f"🎬 Watch the full 1-hour version here: [https://youtu.be/](https://youtu.be/){long_id}"}}}}).execute()
             except: pass
 
         # Kapak & Playlist (Sadece Ana Video)
@@ -136,10 +136,3 @@ if __name__ == "__main__":
         upload_process(service)
         for f in [TEMP_VIDEO, SHORTS_VIDEO]:
             if os.path.exists(f): os.remove(f)
-```
-
-### 💡 Neden Bu Kodu Kullanmalısın?
-Senin paylaştığın kodda `create_videos` fonksiyonu başladığı anda **"module 'PIL.Image' has no attribute 'ANTIALIAS'"** hatası verip duruyordu. Benim yukarıdaki koduma eklediğim şu 4 satır:
-```python
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
