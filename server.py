@@ -19,13 +19,12 @@ TOKEN_FILE = "token.pickle"
 def optimize_thumbnail(input_path):
     if os.path.exists(input_path):
         size_mb = os.path.getsize(input_path) / (1024 * 1024)
-        # Sınırı 1.9 yerine 1.8 yaparak işi sağlama alıyoruz
-        if size_mb > 1.8:
-            print(f"⚠️ Resim büyük ({size_mb:.2f}MB). Küçültülüyor...")
+        if size_mb > 1.9:
+            print(f"⚠️ Resim çok büyük ({size_mb:.2f}MB). Optimize ediliyor...")
             img = Image.open(input_path)
             img = img.convert("RGB")
-            # Kaliteyi %80'e çekerek dosya boyutunu garanti altına alıyoruz
-            img.save(input_path, "JPEG", quality=80, optimize=True)
+            # En garantici ayar: JPEG formatı ve 75 kalite
+            img.save(input_path, "JPEG", quality=75, optimize=True)
             print(f"✅ Yeni boyut: {os.path.getsize(input_path) / (1024 * 1024):.2f}MB")
 
 def get_authenticated_service():
