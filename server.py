@@ -1,10 +1,11 @@
 import os
 import pickle
+from PIL import Image
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 
-# --- DOSYA YOLLARI ---
+# --- YOLLAR ---
 ASSETS_DIR = "assets/"
 TEMP_VIDEO = f"{ASSETS_DIR}current_video.mp4"
 SHORTS_VIDEO = f"{ASSETS_DIR}shorts_video.mp4"
@@ -14,6 +15,17 @@ TITLE_FILE = f"{ASSETS_DIR}title.txt"
 DESC_FILE = f"{ASSETS_DIR}description.txt"
 TAGS_FILE = f"{ASSETS_DIR}tags.txt"
 TOKEN_FILE = "token.pickle"
+
+def optimize_thumbnail(input_path):
+    """Eğer resim 2MB'dan büyükse boyutunu düşürür."""
+    if os.path.exists(input_path):
+        size_mb = os.path.getsize(input_path) / (1024 * 1024)
+        if size_mb > 1.9:
+            print(f"Büyük resim saptandı ({size_mb:.2f}MB), optimize ediliyor...")
+            img = Image.open(input_path)
+            img = img.convert("RGB")
+            img.save(input_path, "JPEG", quality=85, optimize=True)
+            print(f"Yeni boyut: {os.path.getsize(input_path) / (1024 * 1024):.2f}MB")
 
 def get_authenticated_service():
     credentials = None
@@ -51,15 +63,14 @@ def upload_video(youtube, file_path, title, description, tags, is_shorts=False, 
         
         v_id = response.get("id")
         
-        # 🖼️ KÜÇÜK RESİM (Hata olsa bile devam etmesi için try içinde)
+        # 🖼️ KÜÇÜK RESİM ADIMI
         if not is_shorts and os.path.exists(THUMBNAIL):
             try:
-                # 2MB sınırını aşmak için resumable=True kullanıyoruz
-                thumb_media = MediaFileUpload(THUMBNAIL, mimetype='image/png', resumable=True)
-                youtube.thumbnails().set(videoId=v_id, media_body=thumb_media).execute()
+                optimize_thumbnail(THUMBNAIL)
+                youtube.thumbnails().set(videoId=v_id, media_body=MediaFileUpload(THUMBNAIL)).execute()
                 print("🖼️ Küçük resim başarıyla eklendi.")
             except Exception as e:
-                print(f"⚠️ Küçük resim yüklenemedi: {e}")
+                print(f"⚠️ Küçük resim hatası: {e}")
 
         # 📂 OYNATMA LİSTESİ
         if playlist_id and not is_shorts:
@@ -70,24 +81,21 @@ def upload_video(youtube, file_path, title, description, tags, is_shorts=False, 
                 ).execute()
                 print(f"📂 Oynatma listesine eklendi.")
             except Exception as e:
-                print(f"⚠️ Oynatma listesi hatası: {e}")
+                print(f"⚠️ Liste hatası: {e}")
             
         return v_id
     except Exception as e:
-        print(f"❌ Kritik Yükleme Hatası: {e}")
+        print(f"❌ Kritik Hata: {e}")
         return None
 
 if __name__ == "__main__":
     service = get_authenticated_service()
-    title = read_asset(TITLE_FILE, "Aesthetic Relaxing Music (1 HOUR)")
-    desc = read_asset(DESC_FILE, "Relaxing ambiance loop.")
-    tags = read_asset(TAGS_FILE, "relax,ambiance,1hour")
+    title = read_asset(TITLE_FILE, "Relaxing Music (1 HOUR)")
+    desc = read_asset(DESC_FILE, "Relaxing loop.")
+    tags = read_asset(TAGS_FILE, "relax,1hour")
     p_id = read_asset(PLAYLIST_FILE, None)
 
-    # 1. Ana Videoyu Yükle
     main_id = upload_video(service, TEMP_VIDEO, title, desc, tags, playlist_id=p_id)
-    
-    # 2. Shorts'u Yükle (Ana video yüklendiyse)
     if main_id and os.path.exists(SHORTS_VIDEO):
         m_url = f"https://www.youtube.com/watch?v={main_id}"
         upload_video(service, SHORTS_VIDEO, title[:50] + " #shorts", f"Full version: {m_url}", "shorts,relax", is_shorts=True)
