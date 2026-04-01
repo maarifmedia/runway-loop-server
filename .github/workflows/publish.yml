@@ -37,14 +37,13 @@ jobs:
 
     - name: Video Isleme (Sabit Loop ve Dikey Shorts)
       run: |
-        # 1. 1 Saatlİk Sabit Loop: Zoom etkisinden kaçınmak için 'copy' modu kullanıyoruz
-        # Bu işlem 9 saniyelik videoyu 3600 saniyeye (1 saat) tamamlar
-        ffmpeg -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
+        # 1. 1 Saatlik Sabit Loop
+        ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         
-        # 2. Shorts Olusturma: Videoyu tam ortadan 9:16 formatında keser
-        ffmpeg -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
+        # 2. Shorts Olusturma (-y parametresi eklendi ki dosya varsa üzerine yazsın)
+        ffmpeg -y -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
-        # 3. Ana videonun ismini 'server.py'nin beklediği hale getir
+        # 3. İsim Değiştirme
         mv assets/final_main.mp4 assets/current_video.mp4
 
     - name: Videoyu Isle ve YouTube'a Yukle
