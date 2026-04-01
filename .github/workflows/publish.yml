@@ -37,15 +37,14 @@ jobs:
 
     - name: Video Isleme (Sabit Loop ve Dikey Shorts)
       run: |
-        # 1. Eski dosyaları temizle (Zorla sil)
+        # 1. Eski kalıntıları temizle
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
-        # 2. 1 Saatlik Sabit Loop
+        # 2. 1 Saatlik Sabit Loop (Ana Video)
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         
-        # 3. Akıllı Orta Kesim (9:16 Shorts)
-        # Bu komut videonun tam ortasını (center) baz alır, böylece sağda veya soldaki objeleri maksimum oranda korur.
-        ffmpeg -y -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih:(iw-ow)/2:0" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
+        # 3. 59 Saniyelik Loop ve Dikey Kesim (Shorts)
+        ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih:(iw-ow)/2:0" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
         # 4. Ana Videoyu Hazırla
         mv assets/final_main.mp4 assets/current_video.mp4
