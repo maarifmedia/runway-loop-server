@@ -35,18 +35,22 @@ jobs:
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
         echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
 
-    - name: Video Isleme (Sabit Loop ve Dikey Shorts)
+    - name: Video Isleme (Profesyonel Crossfade Loop ve Shorts)
       run: |
         # 1. Eski kalıntıları temizle
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
-        # 2. 1 Saatlik Sabit Loop (Ana Video)
-        ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
+        # 2. 1 Saatlik Profesyonel Crossfade Loop (Ana Video)
+        # Bu kısım tren videolarındaki sert ışık patlamasını "eriyerek" çözer.
+        ffmpeg -y -i assets/current_video.mp4 -filter_complex \
+        "[0:v]loop=loop=256:size=32767:start=0[v_loop]; \
+        [v_loop]xfade=transition=fade:duration=1:offset=14[v_out]" \
+        -map "[v_out]" -t 3600 -c:v libx264 -preset fast -crf 22 -c:a copy assets/final_main.mp4
         
         # 3. 59 Saniyelik Loop ve Dikey Kesim (Shorts)
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih:(iw-ow)/2:0" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
-        # 4. Ana Videoyu Hazırla
+        # 4. Ana Videoyu Hazırla (Isim Degistirme)
         mv assets/final_main.mp4 assets/current_video.mp4
 
     - name: Videoyu Isle ve YouTube'a Yukle
