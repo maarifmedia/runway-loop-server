@@ -41,7 +41,7 @@ jobs:
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
         # 2. 1 Saatlik Profesyonel Crossfade Loop (Ana Video)
-        # Sesi ve görüntüyü senkronize eden güvenli komut
+        # Görüntüyü xfade ile, sesi aloop ile birbirine bağlar
         ffmpeg -y -i assets/current_video.mp4 -filter_complex \
         "[0:v]loop=loop=245:size=32767:start=0,xfade=transition=fade:duration=1:offset=14[v]; \
          [0:a]aloop=loop=245:size=32767:start=0[a]" \
