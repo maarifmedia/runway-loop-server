@@ -22,7 +22,7 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: FFmpeg Kurulumu (Video Isleme Icin)
+    - name: FFmpeg Kurulumu
       run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
     - name: Bağımlılıkları Kur
@@ -30,24 +30,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Kimlik Bilgilerini Hazırla (Base64)
+    - name: Kimlik Bilgilerini Hazırla
       run: |
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
         echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
 
-    - name: Video Isleme (Sabit Loop ve Dikey Shorts)
+    - name: Video Isleme
       run: |
-        # 1. Eski kalıntıları temizle
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
-        # 2. 1 Saatlik Sabit Loop (Ana Video)
+        # Sadece kopyalama (En güvenli yol)
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         
-        # 3. 59 Saniyelik Loop ve Dikey Kesim (Shorts)
+        # Shorts oluşturma
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih:(iw-ow)/2:0" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
-        # 4. Ana Videoyu Hazırla
         mv assets/final_main.mp4 assets/current_video.mp4
 
-    - name: Videoyu Isle ve YouTube'a Yukle
+    - name: Yukle
       run: python server.py
