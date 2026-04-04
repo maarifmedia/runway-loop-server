@@ -41,15 +41,16 @@ jobs:
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
         # 2. 1 Saatlik Profesyonel Crossfade Loop (Ana Video)
+        # Sesi ve görüntüyü senkronize eden güvenli komut
         ffmpeg -y -i assets/current_video.mp4 -filter_complex \
-        "loop=loop=245:size=32767:start=0,xfade=transition=fade:duration=1:offset=14" \
-        -t 3600 -c:v libx264 -preset fast -crf 22 -c:a copy assets/final_main.mp4
+        "[0:v]loop=loop=245:size=32767:start=0,xfade=transition=fade:duration=1:offset=14[v]; \
+         [0:a]aloop=loop=245:size=32767:start=0[a]" \
+        -map "[v]" -map "[a]" -t 3600 -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 192k assets/final_main.mp4
         
         # 3. 59 Saniyelik Loop ve Dikey Kesim (Shorts)
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih:(iw-ow)/2:0" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
         # 4. Ana Videoyu Hazırla (Isim Degistirme)
         mv assets/final_main.mp4 assets/current_video.mp4
-
     - name: Videoyu Isle ve YouTube'a Yukle
       run: python server.py
