@@ -35,43 +35,6 @@ jobs:
         echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
         echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
 
-    name: YouTube Otomasyonu - Veo 3 İşleyici
-
-on:
-  push:
-    paths:
-      - 'assets/current_video.mp4'
-  workflow_dispatch:
-
-jobs:
-  build-and-upload:
-    runs-on: ubuntu-latest
-    
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-    steps:
-    - name: Depoyu Kontrol Et
-      uses: actions/checkout@v4
-
-    - name: Python Kurulumu
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: FFmpeg Kurulumu (Video Isleme Icin)
-      run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-    - name: Bağımlılıkları Kur
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Kimlik Bilgilerini Hazırla (Base64)
-      run: |
-        echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
-        echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
-
     - name: Video Isleme (Sabit Loop ve Dikey Shorts)
       run: |
         # 1. Eski kalıntıları temizle
@@ -86,9 +49,6 @@ jobs:
         
         # 4. Ana Videoyu Hazırla
         mv assets/final_main.mp4 assets/current_video.mp4
-
-    - name: Videoyu Isle ve YouTube'a Yukle
-      run: python server.py
 
     - name: Videoyu Isle ve YouTube'a Yukle
       run: python server.py
