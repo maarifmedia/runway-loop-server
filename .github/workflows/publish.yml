@@ -41,7 +41,7 @@ jobs:
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
         # 2. 1 Saatlik Sabit Loop (Ana Video)
-        # Bu yöntem en hızlı ve en güvenli olandır.
+        # En güvenli yöntem: Videoyu sadece uca ekler, hata vermez.
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         
         # 3. 59 Saniyelik Loop ve Dikey Kesim (Shorts)
