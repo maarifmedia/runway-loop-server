@@ -22,7 +22,7 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: FFmpeg Kurulumu (Video Isleme Icin)
+    - name: FFmpeg Kurulumu
       run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
     - name: Bağımlılıkları Kur
@@ -41,13 +41,13 @@ jobs:
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
         # 2. 1 Saatlik Sabit Loop (Ana Video)
-        # En güvenli yöntem: Videoyu sadece uca ekler, hata vermez.
+        # Bu komut en güvenli yoldur: Videoyu sadece kopyalayarak uca ekler.
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         
         # 3. 59 Saniyelik Loop ve Dikey Kesim (Shorts)
         ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -vf "crop=ih*(9/16):ih:(iw-ow)/2:0" -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
-        # 4. Ana Videoyu Hazırla
+        # 4. Ana Videoyu Hazırla (Isim Degistirme)
         mv assets/final_main.mp4 assets/current_video.mp4
 
     - name: Videoyu Isle ve YouTube'a Yukle
