@@ -1,9 +1,6 @@
 name: YouTube Otomasyonu - Veo 3 İşleyici
 
 on:
-  push:
-    paths:
-      - 'assets/current_video.mp4'
   repository_dispatch:
     types: [video_uret]
   workflow_dispatch:
