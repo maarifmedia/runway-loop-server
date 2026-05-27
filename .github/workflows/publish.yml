@@ -38,35 +38,36 @@ jobs:
       run: |
         wget https://github.com/google/fonts/raw/main/ofl/oswald/Oswald%5Bwght%5D.ttf -O Oswald.ttf
 
-    - name: Video Isleme (Akilli Muzik Secimi, Sabit Loop ve Shorts)
+    - name: Video Isleme (Kok Dizindeki Muzik Klasoru)
       run: |
         # 1. Eski kalıntıları temizle
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
-        # 2. MÜZİK KONTROLÜ VE 1 SAATLİK ANA VİDEO OLUŞTURMA
+        # 2. MELODİK Mİ MÜZİKSİZ Mİ KONTROLÜ
         IS_MELODIC=false
-        
-        # Başlık ve etiketlerde tetikleyici kelimeleri ara
         if [ -f assets/title.txt ] && grep -qiE 'lofi|piano|music|chill' assets/title.txt; then IS_MELODIC=true; fi
         if [ -f assets/tags.txt ] && grep -qiE 'lofi|piano|music|chill' assets/tags.txt; then IS_MELODIC=true; fi
         
+        # 3. MİKSLEME VEYA DOĞA SESİ OLUŞTURMA
         if [ "$IS_MELODIC" = true ]; then
-          echo "Melodik konsept algilandi! Rastgele müzik ekleniyor..."
+          echo "Melodik konsept algilandi! Ana dizindeki music klasorunden rastgele muzik ekleniyor..."
           
-          # assets/music klasöründen rastgele 1 dosya seç
-          RANDOM_MUSIC=$(find assets/music/ -type f | shuf -n 1)
-          echo "Secilen muzik: $RANDOM_MUSIC"
+          # Doğrudan ana dizindeki music/ klasörüne bak
+          RANDOM_MUSIC=$(find music/ -type f | shuf -n 1)
           
-          # Ortam sesini (%70) ve müziği (%30) birleştirerek 1 saatlik loop oluştur
-          ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -filter_complex "[0:a]volume=0.7[amb];[1:a]volume=0.3[mus];[amb][mus]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+          if [ -z "$RANDOM_MUSIC" ]; then
+            echo "UYARI: Muzik klasoru bos! Guvenlik amaciyla muziksiz devam ediliyor..."
+            ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
+          else
+            echo "Secilen muzik: $RANDOM_MUSIC"
+            ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -filter_complex "[0:a]volume=0.7[amb];[1:a]volume=0.3[mus];[amb][mus]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+          fi
         else
-          echo "Doga konsepti algilandi! Sadece saf ortam sesi kullaniliyor..."
-          
-          # Müziksiz, sadece videonun orijinal ortam sesini 1 saat loopla
+          echo "Doga konsepti algilandi! Saf ortam sesi..."
           ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         fi
         
-        # 3. YENİ SHORTS FORMATI (Müzik durumu neyse Shorts'a da doğrudan yansır)
+        # 4. YENİ SHORTS FORMATI
         ffmpeg -y -i assets/final_main.mp4 -vf "\
         scale=1080:-1,\
         pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,\
@@ -76,7 +77,7 @@ jobs:
         drawtext=fontfile=Oswald.ttf:text='in Comments':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=1550\
         " -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
-        # 4. Ana Videoyu Hazırla (İsim Değiştirme)
+        # 5. Ana Videoyu Hazırla (İsim Değiştirme)
         mv assets/final_main.mp4 assets/current_video.mp4
 
     - name: Videoyu Isle ve YouTube'a Yukle
