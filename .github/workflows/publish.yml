@@ -66,7 +66,20 @@ jobs:
             ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
           else
             echo "Secilen muzik: $RANDOM_MUSIC"
-            ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -filter_complex "[0:a]volume=0.7[amb];[1:a]volume=0.3[mus];[amb][mus]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+            
+            # --- YENI EKLENEN ZIRH KODU ---
+            # Videoda gercekten bir ses kanali olup olmadigini kontrol ediyoruz
+            HAS_AUDIO=$(ffprobe -i assets/current_video.mp4 -show_streams -select_streams a -loglevel error)
+            
+            if [ -z "$HAS_AUDIO" ]; then
+              echo "Videoda ses kanali bulunamadi! Sagir video tespit edildi, sadece muzik ekleniyor..."
+              ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+            else
+              echo "Videoda ses kanali bulundu! Ambiyans ile muzik miksleniyor..."
+              ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -filter_complex "[0:a]volume=0.7[amb];[1:a]volume=0.3[mus];[amb][mus]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+            fi
+            # --- ZIRH BITIS ---
+            
           fi
         else
           echo "Doga konsepti veya muzik klasoru yok! Saf ortam sesi..."
