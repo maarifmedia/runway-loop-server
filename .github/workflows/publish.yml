@@ -43,10 +43,20 @@ jobs:
         # 1. Eski kalıntıları temizle
         rm -f assets/final_main.mp4 assets/shorts_video.mp4
         
-        # 2. MELODİK Mİ MÜZİKSİZ Mİ KONTROLÜ
+        # 2. MELODİK Mİ MÜZİKSİZ Mİ KONTROLÜ (AKILLI FİLTRE)
         IS_MELODIC=false
-        if [ -f assets/title.txt ] && grep -qiE 'lofi|piano|music|chill' assets/title.txt; then IS_MELODIC=true; fi
-        if [ -f assets/tags.txt ] && grep -qiE 'lofi|piano|music|chill' assets/tags.txt; then IS_MELODIC=true; fi
+        
+        for file in assets/title.txt assets/tags.txt; do
+          if [ -f "$file" ]; then
+            # Önce lofi, piano veya chill var mı diye bak (Kesin müzik)
+            if grep -qiE 'lofi|piano|chill' "$file"; then
+              IS_MELODIC=true
+            # Eğer 'music' geçiyorsa ama 'no music' GEÇMİYORSA müziği aç
+            elif grep -qi 'music' "$file" && ! grep -qi 'no music' "$file"; then
+              IS_MELODIC=true
+            fi
+          fi
+        done
         
         # 3. KLASÖRÜ BUL (Kök dizin veya assets içi hata koruması)
         MUSIC_DIR=""
@@ -82,7 +92,7 @@ jobs:
             
           fi
         else
-          echo "Doga konsepti veya muzik klasoru yok! Saf ortam sesi..."
+          echo "Doga konsepti, muzik klasoru yok veya No Music komutu alindi! Saf ortam sesi..."
           ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
         fi
         
