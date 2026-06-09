@@ -1,64 +1,4 @@
-name: YouTube Otomasyonu - Veo 3 İşleyici
-
-on:
-  repository_dispatch:
-    types: [video_uret]
-  workflow_dispatch:
-
-jobs:
-  build-and-upload:
-    runs-on: ubuntu-latest
-    
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-    steps:
-    - name: Depoyu Kontrol Et
-      uses: actions/checkout@v4
-
-    - name: Python Kurulumu
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: FFmpeg Kurulumu
-      run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-    - name: Bağımlılıkları Kur
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Kimlik Bilgilerini Hazırla (Base64)
-      run: |
-        echo '${{ secrets.CLIENT_SECRETS_JSON }}' > client_secrets.json
-        echo "${{ secrets.TOKEN_JSON }}" | base64 --decode > token.pickle
-
-    - name: Font Kurulumu (Oswald)
-      run: |
-        wget https://github.com/google/fonts/raw/main/ofl/oswald/Oswald%5Bwght%5D.ttf -O Oswald.ttf
-
-    - name: Video Isleme (Hata Korumali Muzik Modulu)
-      run: |
-        # 1. Eski kalıntıları temizle
-        rm -f assets/final_main.mp4 assets/shorts_video.mp4
-        
-        # 2. MELODİK Mİ MÜZİKSİZ Mİ KONTROLÜ (AKILLI FİLTRE)
-        IS_MELODIC=false
-        
-        for file in assets/title.txt assets/tags.txt; do
-          if [ -f "$file" ]; then
-            # Önce lofi, piano veya chill var mı diye bak (Kesin müzik)
-            if grep -qiE 'lofi|piano|chill' "$file"; then
-              IS_MELODIC=true
-            # Eğer 'music' geçiyorsa ama 'no music' GEÇMİYORSA müziği aç
-            elif grep -qi 'music' "$file" && ! grep -qi 'no music' "$file"; then
-              IS_MELODIC=true
-            fi
-          fi
-        done
-        
-        # 3. KLASÖRÜ BUL (Kök dizin veya assets içi hata koruması)
+# 3. KLASÖRÜ BUL (Kök dizin veya assets içi hata koruması)
         MUSIC_DIR=""
         if [ -d "music" ]; then
           MUSIC_DIR="music"
@@ -66,48 +6,39 @@ jobs:
           MUSIC_DIR="assets/music"
         fi
         
-        # 4. MİKSLEME VEYA DOĞA SESİ OLUŞTURMA
+        # 3.5 ARA İSTASYON: 16 SANİYELİK PING-PONG DÖNGÜSÜ OLUŞTURMA
+        echo "Kamera zıplamasını engellemek için Ping-Pong (İleri-Geri) kurgusu yapılıyor..."
+        HAS_ORIGINAL_AUDIO=$(ffprobe -i assets/current_video.mp4 -show_streams -select_streams a -loglevel error)
+        
+        if [ -z "$HAS_ORIGINAL_AUDIO" ]; then
+          # Ses yoksa sadece görüntüyü ping-pong yap
+          ffmpeg -y -i assets/current_video.mp4 -filter_complex "[0:v]reverse[r];[0:v][r]concat=n=2:v=1:a=0[v]" -map "[v]" -c:v libx264 -crf 23 assets/pingpong_video.mp4
+        else
+          # Ses varsa görüntüyü ileri-geri, sesi ise düz peş peşe (ters dalga sesi olmasın diye) birleştir
+          ffmpeg -y -i assets/current_video.mp4 -filter_complex "[0:v]reverse[r];[0:v][r]concat=n=2:v=1:a=0[v];[0:a][0:a]concat=n=2:v=0:a=1[a]" -map "[v]" -map "[a]" -c:v libx264 -crf 23 -c:a aac -b:a 192k assets/pingpong_video.mp4
+        fi
+        
+        # 4. MİKSLEME VEYA DOĞA SESİ OLUŞTURMA (Senin Orijinal Kusursuz Yapın)
         if [ "$IS_MELODIC" = true ] && [ "$MUSIC_DIR" != "" ]; then
           echo "Melodik konsept algilandi! $MUSIC_DIR klasorunden rastgele muzik ekleniyor..."
           RANDOM_MUSIC=$(find "$MUSIC_DIR" -type f -name "*.mp3" | shuf -n 1)
           
           if [ -z "$RANDOM_MUSIC" ]; then
             echo "UYARI: Muzik klasoru bos! Guvenlik amaciyla muziksiz devam ediliyor..."
-            ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
+            ffmpeg -y -stream_loop -1 -i assets/pingpong_video.mp4 -t 3600 -c copy assets/final_main.mp4
           else
             echo "Secilen muzik: $RANDOM_MUSIC"
-            
-            # --- YENI EKLENEN ZIRH KODU ---
-            # Videoda gercekten bir ses kanali olup olmadigini kontrol ediyoruz
-            HAS_AUDIO=$(ffprobe -i assets/current_video.mp4 -show_streams -select_streams a -loglevel error)
+            HAS_AUDIO=$(ffprobe -i assets/pingpong_video.mp4 -show_streams -select_streams a -loglevel error)
             
             if [ -z "$HAS_AUDIO" ]; then
               echo "Videoda ses kanali bulunamadi! Sagir video tespit edildi, sadece muzik ekleniyor..."
-              ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+              ffmpeg -y -stream_loop -1 -i assets/pingpong_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
             else
               echo "Videoda ses kanali bulundu! Ambiyans ile muzik miksleniyor..."
-              ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -filter_complex "[0:a]volume=0.7[amb];[1:a]volume=0.3[mus];[amb][mus]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
+              ffmpeg -y -stream_loop -1 -i assets/pingpong_video.mp4 -stream_loop -1 -i "$RANDOM_MUSIC" -t 3600 -filter_complex "[0:a]volume=0.7[amb];[1:a]volume=0.3[mus];[amb][mus]amix=inputs=2:duration=first[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k assets/final_main.mp4
             fi
-            # --- ZIRH BITIS ---
-            
           fi
         else
-          echo "Doga konsepti, muzik klasoru yok veya No Music komutu alindi! Saf ortam sesi..."
-          ffmpeg -y -stream_loop -1 -i assets/current_video.mp4 -t 3600 -c copy assets/final_main.mp4
+          echo "Doga konsepti veya muzik klasoru yok! Saf ortam sesi..."
+          ffmpeg -y -stream_loop -1 -i assets/pingpong_video.mp4 -t 3600 -c copy assets/final_main.mp4
         fi
-        
-        # 5. YENİ SHORTS FORMATI
-        ffmpeg -y -i assets/final_main.mp4 -vf "\
-        scale=1080:-1,\
-        pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,\
-        drawtext=fontfile=Oswald.ttf:text='NEED TO RELAX?':fontcolor=white:fontsize=90:x=(w-text_w)/2:y=250,\
-        drawtext=fontfile=Oswald.ttf:text='1 Hour of Pure Peace':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=400,\
-        drawtext=fontfile=Oswald.ttf:text='Full Video':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=1450,\
-        drawtext=fontfile=Oswald.ttf:text='in Comments':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=1550\
-        " -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
-        
-        # 6. Ana Videoyu Hazırla (İsim Değiştirme)
-        mv assets/final_main.mp4 assets/current_video.mp4
-
-    - name: Videoyu Isle ve YouTube'a Yukle
-      run: python server.py
