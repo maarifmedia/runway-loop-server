@@ -106,7 +106,7 @@ jobs:
         drawtext=fontfile=Oswald.ttf:text='NEED TO RELAX?':fontcolor=white:fontsize=90:x=(w-text_w)/2:y=250,\
         drawtext=fontfile=Oswald.ttf:text='1 Hour of Pure Peace':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=400,\
         drawtext=fontfile=Oswald.ttf:text='Full Video':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=1450,\
-        drawtext=fontfile=Oswald.ttf:text='in Comments':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=1550\
+        drawtext=fontfile=Oswald.ttf:text='Link Below':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=1550\
         " -t 59 -c:v libx264 -crf 23 assets/shorts_video.mp4
         
         # 6. Ana Videoyu Hazırla (İsim Değiştirme)
